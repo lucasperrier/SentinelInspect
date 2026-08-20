@@ -40,6 +40,23 @@ offline evaluation and serving share one forward pass.
 generalised. That is the argument for tuning under a review-capacity budget rather than
 picking round numbers: the guessed [0.35, 0.65] caught only 58%.
 
+**A worked example to have ready.** Two images through the CLI:
+
+```
+ccic/Positive/00001.jpg  ->  crack     p=0.9992   needs_review=false
+ccic/Negative/00001.jpg  ->  crack     p=0.5258   needs_review=true    (wrong)
+```
+
+The second is a misclassification, and the triage rule caught it -- the system declines to
+assert rather than asserting incorrectly. That is the whole argument for the abstain band
+in two lines.
+
+Note the honest wrinkle: the second image is in the **training** split. A frozen backbone
+leaves roughly four thousand trainable parameters in the classification head, which cannot
+memorise individual examples the way a fine-tuned network would, so training-set errors are
+expected here. If you show this example, say that -- an interviewer who spots it and hears
+nothing will assume you did not know.
+
 ---
 
 ## Architecture in one breath
