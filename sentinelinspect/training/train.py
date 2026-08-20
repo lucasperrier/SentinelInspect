@@ -6,23 +6,26 @@ from pathlib import Path
 from typing import Any
 
 import hydra
+import torch
+from omegaconf import DictConfig, OmegaConf
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+
+from sentinelinspect.config.load import to_runtime_config
+from sentinelinspect.data.datamodule import CrackDataModule
+from sentinelinspect.models.factory import build_model
+
+# MLflow is a training-time dependency only, kept out of the core install so the
+# inference container does not ship Flask, SQLAlchemy, alembic and friends.
 try:
     import mlflow
+    from pytorch_lightning.loggers import MLFlowLogger
 except ModuleNotFoundError as exc:  # pragma: no cover - import-time guard
     raise ModuleNotFoundError(
         "Training requires MLflow, which is not part of the core install so that "
         "the inference container stays slim. Install it with:\n"
         '    pip install -e ".[train]"'
     ) from exc
-import torch
-from omegaconf import DictConfig, OmegaConf
-from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.loggers import MLFlowLogger
-
-from sentinelinspect.config.load import to_runtime_config
-from sentinelinspect.data.datamodule import CrackDataModule
-from sentinelinspect.models.factory import build_model
 
 
 def flatten_dict(cfg: dict[str, Any], parent_key: str = "", sep: str = ".") -> dict[str, Any]:
