@@ -1,4 +1,13 @@
-tracking_uri: sqlite:///mlflow.db
+# Project-scoped tracking store.
+#
+# This was `sqlite:///mlflow.db` -- a bare relative path resolved against the
+# working directory, so any project run from a shared parent wrote into the same
+# file. That store ended up holding 34 runs across four unrelated experiments.
+# The same class of bug as an absolute path in the manifest: a location that
+# depends on where you happened to be standing.
+#
+# mlruns/ is gitignored, so nothing here reaches the repository.
+tracking_uri: sqlite:///mlruns/sentinelinspect.db
 experiment_name: crack_detection
 registry_uri: null
 use_mlflow: true

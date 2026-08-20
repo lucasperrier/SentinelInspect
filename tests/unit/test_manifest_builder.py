@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 from PIL import Image
 
-from src.data.build_manifest import build_manifest
+from sentinelinspect.data.build_manifest import build_manifest
 
 
 def _make_image(path: Path, size=(32, 32), color=(255, 255, 255)) -> None:
@@ -24,7 +24,6 @@ def test_build_manifest_basic(tmp_path: Path) -> None:
     assert len(df) == 2
 
     expected_cols = {
-        "path",
         "relative_path",
         "dataset",
         "split",

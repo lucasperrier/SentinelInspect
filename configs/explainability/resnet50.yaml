@@ -1,0 +1,48 @@
+seed: 42
+deterministic: true
+
+# `name` selects the class from the model registry, `model` the timm backbone
+name: resnet50
+model: resnet50
+num_classes: 2
+pretrained: true
+
+# Data module params
+batch_size: 1
+num_workers: 4
+# split artifacts are the dataset contract; see docs/architecture.md
+manifest_path: data/processed/manifests/manifest.csv
+test_split_path: data/processed/splits/test.csv
+
+# IMPORTANT: don't load a finetuned checkpoint
+# set this to a checkpoint from `python -m sentinelinspect.training.train`
+checkpoint_path: null
+
+# Output
+output_dir: reports/explainability_resnet50
+save_predictions: true
+save_confusion_matrix: true
+
+# Optional MLflow logging
+use_mlflow: false
+tracking_uri: file:./mlruns
+experiment_name: crack_detection
+run_name: explain_resnet50
+
+# Explainability output
+n_explain_images: 4
+overlay_alpha: 0.45
+
+# SHAP controls
+do_shap: true
+shap_n_segments: 40
+shap_compactness: 10.0
+shap_nsamples: 80
+shap_baseline: blur
+
+
+# ViT patch SHAP (VERY slow)
+do_shap_vit_patch: false
+vit_patch_size: 16
+vit_patch_shap_nsamples: 5
+vit_patch_shap_baseline: blur

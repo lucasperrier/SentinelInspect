@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+#
+# API image for SentinelInspect.
+#
+# Two stages so the compiler toolchain needed to build wheels never ships: the
+# runtime layer receives only the finished virtualenv.
+#
+# The model is NOT baked in. Weights are mounted at run time and named by
+# environment variable, so a new checkpoint does not require a rebuild and the
+# image stays independent of any particular training run.
+#
+#   docker build -f docker/Dockerfile.api -t sentinelinspect-api .
+#   docker run --rm -p 8000:8000 \
+#     -v "$(pwd)/runs:/models:ro" \
+#     -e SENTINELINSPECT_CHECKPOINT=/models/<run>/<file>.ckpt \
+#     sentinelinspect-api
+
+# ---------------------------------------------------------------- builder ---
+FROM python:3.11-slim AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /build
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# CPU wheels explicitly. The default Linux torch pulls the whole CUDA stack --
+# nvidia-cublas, cudnn, nccl, triton and friends -- several GB that would never
+# execute in this container.
+RUN pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+
+COPY pyproject.toml README.md ./
+COPY sentinelinspect ./sentinelinspect
+RUN pip install ".[api]"
+
+# ---------------------------------------------------------------- runtime ---
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    SENTINELINSPECT_CONFIG_DIR=/app/configs
+
+# libgomp: torch's OpenMP runtime. curl: used by HEALTHCHECK below.
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y libgomp1 curl \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/venv /opt/venv
+
+WORKDIR /app
+# Hydra resolves config_path relative to the module, so configs/ must sit
+# beside the package exactly as it does in the repository.
+COPY configs ./configs
+
+# Run unprivileged: a container that does not need root should not have it.
+RUN useradd --create-home --uid 10001 appuser \
+ && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# Reports unhealthy until the model has actually loaded, not merely until the
+# process is up.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "sentinelinspect.inference_service.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,110 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinelinspect"
+version = "0.1.0"
+description = "A visual inspection triage system: reproducible data contracts, standardised evaluation, and deployable inference."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Lucas Perrier", email = "lucas.j.perrier@gmail.com" }]
+keywords = ["computer-vision", "crack-detection", "pytorch", "mlops"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Private :: Do Not Upload",
+]
+
+# Every entry below is imported somewhere in sentinelinspect/. Nothing here is
+# aspirational, and nothing imported is missing: `pip install -e .` into an
+# empty environment is enough to run training, evaluation and inference.
+# NOTE: on Linux, `torch` defaults to the CUDA build and drags in several GB of
+# nvidia-* wheels. For a CPU-only machine or a container, install torch from the
+# CPU index first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -e ".[dev]"
+dependencies = [
+    "albumentations>=1.4",
+    "hydra-core>=1.3",
+    "numpy>=1.26",
+    "omegaconf>=2.3",
+    "pandas>=2.0",
+    "pillow>=10.0",
+    "pydantic>=2.5",
+    "pytorch-lightning>=2.0",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.3",
+    "timm>=0.9",
+    "torch>=2.0",
+    "torchmetrics>=1.0",
+]
+
+[project.optional-dependencies]
+# Grad-CAM works on the core install. SHAP additionally needs slic superpixels
+# from scikit-image. opencv is deliberately NOT listed: albumentations already
+# brings opencv-python-headless, so cv2 is importable, and adding the non-
+# headless build would install a second, conflicting opencv.
+# Experiment tracking is a training-time concern. Keeping mlflow out of the
+# core install keeps Flask, SQLAlchemy, alembic, gunicorn, graphene, the Docker
+# SDK and OpenTelemetry out of the inference container.
+train = [
+    "mlflow>=2.9",
+]
+explain = [
+    "shap>=0.44",
+    "scikit-image>=0.22",
+]
+dev = [
+    "pytest>=7.2",
+    "ruff>=0.12",
+    "httpx>=0.27",          # fastapi TestClient transport
+]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",   # required for multipart/form-data uploads
+]
+
+[project.urls]
+Repository = "https://github.com/lucasperrier/SentinelInspect"
+
+# Replaces the scripts/ directory: these are generated at install time and
+# resolve from anywhere, rather than being wrappers that only work from the
+# repository root.
+[project.scripts]
+sentinelinspect-manifest = "sentinelinspect.data.build_manifest:main"
+sentinelinspect-split    = "sentinelinspect.data.splitters:main"
+sentinelinspect-validate = "sentinelinspect.data.validate_dataset:main"
+sentinelinspect-train    = "sentinelinspect.training.train:main"
+sentinelinspect-evaluate = "sentinelinspect.evaluation.evaluate:main"
+sentinelinspect-predict  = "sentinelinspect.inference.predict:main"
+
+[tool.setuptools.packages.find]
+include = ["sentinelinspect*"]
+
+# NOTE: configs/ deliberately lives at the repository root rather than inside
+# the package. Hydra resolves config_path relative to the module file, so this
+# works for an editable install and for the container, which copies configs in.
+# A non-editable install from a wheel would not see them.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Depends(...) and File(...) in argument defaults is the FastAPI idiom, not a
+# mutable-default bug -- these are sentinels FastAPI resolves per request.
+"sentinelinspect/inference_service/*.py" = ["B008"]

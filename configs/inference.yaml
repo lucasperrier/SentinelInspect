@@ -2,6 +2,7 @@ defaults:
   - data: default
   - model: resnet50
   - mlflow: default
+  - review: default
   - service: default
   - _self_
 

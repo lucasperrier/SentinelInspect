@@ -1,0 +1,12 @@
+# Predictions whose p(crack) falls inside this band are routed to manual review
+# instead of being auto-decided. Two-sided on purpose: 0.52 and 0.48 are equally
+# uncertain, and a one-sided floor would only catch one of them.
+#
+# Tuned on the validation split, not guessed. Regenerate with:
+#   python -m sentinelinspect.evaluation.evaluate split=val
+#
+# Tuned 2026-08-20 on the 6,057-image validation split against the
+# epoch-2 checkpoint: catches 80% of the model's errors while routing
+# under 10% of traffic to a human.
+lower: 0.23
+upper: 0.77

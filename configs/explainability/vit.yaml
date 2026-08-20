@@ -1,0 +1,42 @@
+seed: 42
+deterministic: true
+
+# `name` selects the class from the model registry, `model` the timm backbone
+name: vit
+model: vit_base_patch16_224
+num_classes: 2
+pretrained: true
+
+# Data module params
+batch_size: 1
+num_workers: 4
+# split artifacts are the dataset contract; see docs/architecture.md
+manifest_path: data/processed/manifests/manifest.csv
+test_split_path: data/processed/splits/test.csv
+
+# set this to a checkpoint from `python -m sentinelinspect.training.train`
+checkpoint_path: null
+
+# Output
+output_dir: reports/eval_trained_vit
+save_predictions: true
+save_confusion_matrix: true
+
+# Optional MLflow logging
+use_mlflow: false
+tracking_uri: file:./mlruns
+experiment_name: crack_detection
+run_name: explain_vit
+
+# Explainability output
+n_explain_images: 4
+overlay_alpha: 0.45
+
+# SHAP controls
+do_shap: true
+do_shap_vit_patch: false
+vit_patch_shap_nsamples: 80
+
+vit_patch_size: 16
+vit_patch_shap_nsamples: 2
+vit_patch_shap_baseline: blur
