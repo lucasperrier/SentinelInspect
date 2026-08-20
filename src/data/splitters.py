@@ -7,6 +7,7 @@ from typing import Tuple
 
 import pandas as pd
 
+DEFAULT_SPLIT_KEY = "sha256"
 
 DEFAULT_SPLIT_RATIOS: Tuple[float, float, float] = (0.70, 0.15, 0.15)
 
@@ -28,20 +29,17 @@ def validate_split_ratios(train_ratio: float, val_ratio: float, test_ratio: floa
     
 
 def assign_split(
-        relative_path: str,
-        train_ratio: float,
-        val_ratio: float,
-        test_ratio: float,
-        seed: int = 42,
+    key: str,
+    train_ratio: float,
+    val_ratio: float,
+    seed: int = 42,
 ) -> str:
-    _ = test_ratio
-    score = stable_hash_to_unit_interval(relative_path, seed=seed)
+    score = stable_hash_to_unit_interval(key, seed=seed)
     if score < train_ratio:
         return "train"
     if score < train_ratio + val_ratio:
         return "val"
     return "test"
-
 
 def build_splits_from_manifest(
         manifest_df: pd.DataFrame,
@@ -49,41 +47,34 @@ def build_splits_from_manifest(
         val_ratio: float = DEFAULT_SPLIT_RATIOS[1],
         test_ratio: float = DEFAULT_SPLIT_RATIOS[2],
         seed: int = 42,
-        stratify_by: str | None = "label",
+        split_key: str = DEFAULT_SPLIT_KEY,
 ) -> pd.DataFrame:
-    required_columns = {"relative_path"}
-    missing = required_columns - set(manifest_df.columns)
-    if missing:
-        raise ValueError(f"Manifest is missing required columns: {sorted(missing)}")
-    
+    if split_key not in manifest_df.columns:
+        raise ValueError(
+            f"Manifest is missing the split key column: {split_key!r}. "
+            f"Available columns: {sorted(manifest_df.columns)}"
+        )
+
     validate_split_ratios(train_ratio, val_ratio, test_ratio)
 
     df = manifest_df.copy()
-
-    if stratify_by is not None and stratify_by in df.columns:
-        split_series = []
-        for _, group_df in df.groupby(stratify_by, dropna=False, sort=False):
-            group_scores = group_df["relative_path"].astype(str).map(
-                lambda x: stable_hash_to_unit_interval(x, seed=seed)
-            )
-            group_split = pd.Series(index=group_df.index, dtype="object")
-            group_split[group_scores < train_ratio] = "train"
-            group_split[(group_scores >= train_ratio) & (group_scores < train_ratio + val_ratio)] = "val"
-            group_split[group_scores >= train_ratio + val_ratio] = "test"
-            split_series.append(group_split)
-        df["split"] = pd.concat(split_series).sort_index()
-    else:
-        df["split"] = df["relative_path"].astype(str).map(
-            lambda x: assign_split(
-            relative_path=x,
-            train_ratio=train_ratio,
-            val_ratio=val_ratio,
-            test_ratio=test_ratio,
-            seed=seed,
-        )
+    df["split"] = df[split_key].astype(str).map(
+        lambda key: assign_split(key, train_ratio, val_ratio, seed=seed)
     )
-        
-    return df.sort_values(["split", "relative_path"]).reset_index(drop=True)
+
+    sort_by = ["split", "relative_path"] if "relative_path" in df.columns else ["split", split_key]
+    return df.sort_values(sort_by).reset_index(drop=True)
+
+
+def split_balance(df: pd.DataFrame, label_column: str = "label") -> pd.DataFrame:
+    if label_column not in df.columns or "split" not in df.columns:
+        return pd.DataFrame()
+    return (
+        df.groupby("split")[label_column]
+        .value_counts(normalize=True)
+        .unstack(fill_value=0.0)
+        .round(4)
+    )
 
 
 def write_split_files(df: pd.DataFrame, output_dir: Path) -> None:
@@ -92,9 +83,6 @@ def write_split_files(df: pd.DataFrame, output_dir: Path) -> None:
     for split_name in ("train", "val", "test"):
         split_df = df[df["split"] == split_name].copy()
         split_df.to_csv(output_dir / f"{split_name}.csv", index=False)
-
-    robustness_df = df.copy()
-    robustness_df.to_csv(output_dir / "robustness.csv", index=False)
 
 
 def load_manifest(path: Path) -> pd.DataFrame:
@@ -119,24 +107,23 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=Path("data/processed/splits"),
-        help="Output directory for train.csv, val.csv, test.csv, robustness.csv.",
+        help="Output directory for train.csv, val.csv, test.csv.",
     )
     parser.add_argument("--train-ratio", type=float, default=DEFAULT_SPLIT_RATIOS[0], help="Train ratio.")
     parser.add_argument("--val-ratio", type=float, default=DEFAULT_SPLIT_RATIOS[1], help="Validation ratio.")
     parser.add_argument("--test-ratio", type=float, default=DEFAULT_SPLIT_RATIOS[2], help="Test ratio.")
     parser.add_argument("--seed", type=int, default=42, help="Seed used in deterministic hash splitting.")
     parser.add_argument(
-        "--stratify-by",
+        "--split-key",
         type=str,
-        default="label",
-        help="Optional column to stratify by (e.g. label). Use empty string to disable.",
+        default=DEFAULT_SPLIT_KEY,
+        help="Manifest column the split is keyed on. Use a content hash to prevent duplicate leakage.",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    stratify_by = args.stratify_by if args.stratify_by else None
 
     manifest_df = load_manifest(args.manifest_path)
     split_df = build_splits_from_manifest(
@@ -145,14 +132,21 @@ def main() -> None:
         val_ratio=args.val_ratio,
         test_ratio=args.test_ratio,
         seed=args.seed,
-        stratify_by=stratify_by,
+        split_key=args.split_key,
     )
     write_split_files(split_df, args.output_dir)
 
     counts = split_df["split"].value_counts().to_dict()
     print(f"Loaded manifest rows: {len(manifest_df)}")
+    print(f"Split key: {args.split_key}")
     print(f"Split counts: {counts}")
-    print(f"Wrote split files to: {args.output_dir}")
+
+    balance = split_balance(split_df)
+    if not balance.empty:
+        print("\nClass balance per split:")
+        print(balance.to_string())
+
+    print(f"\nWrote split files to: {args.output_dir}")
 
 
 if __name__ == "__main__":

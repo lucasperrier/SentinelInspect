@@ -50,11 +50,9 @@ class CrackDataModule(pl.LightningDataModule):
         train_split_path: str = "data/processed/splits/train.csv",
         val_split_path: str = "data/processed/splits/val.csv",
         test_split_path: str = "data/processed/splits/test.csv",
-        robustness_split_path: str | None = "data/processed/splits/robustness.csv",
         raw_root: str = ".",
         validate_artifacts: bool = True,
         fail_on_validation_error: bool = True,
-        use_robustness_split: bool = False,
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -78,12 +76,10 @@ class CrackDataModule(pl.LightningDataModule):
         self.train_split_path = Path(train_split_path)
         self.val_split_path = Path(val_split_path)
         self.test_split_path = Path(test_split_path)
-        self.robustness_split_path = Path(robustness_split_path) if robustness_split_path else None
         self.raw_root = Path(raw_root)
 
         self.validate_artifacts = validate_artifacts
         self.fail_on_validation_error = fail_on_validation_error
-        self.use_robustness_split = use_robustness_split
         
         # Transforms
         self.train_transform = build_train_transforms(self.preprocessing)
@@ -92,7 +88,6 @@ class CrackDataModule(pl.LightningDataModule):
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
-        self.robust_dataset = None
 
     def prepare_data(self):
         # No download. Optional: check file existence.
@@ -103,24 +98,21 @@ class CrackDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         if self.validate_artifacts:
-            report, errors = validate(
+            report = validate(
                 manifest_path=self.manifest_path,
                 train_path=self.train_split_path,
                 val_path=self.val_split_path,
                 test_path=self.test_split_path,
-                robustness_path=(
-                    self.robustness_split_path
-                    if self.use_robustness_split
-                    and self.robustness_split_path
-                    and self.robustness_split_path.exists()
-                    else None
-                ),
                 raw_root=self.raw_root,
             )
             if self.verbose:
                 print("[CrackDataModule] validation report:", report)
-            if errors and self.fail_on_validation_error:
-                raise ValueError("Dataset artifact validation failed:\n- " + "\n- ".join(errors))
+                for warning in report.warnings:
+                    print("[CrackDataModule] warning:", warning)
+            if report.errors and self.fail_on_validation_error:
+                raise ValueError(
+                    "Dataset artifact validation failed:\n- " + "\n- ".join(report.errors)
+                )
 
         train_df = pd.read_csv(self.train_split_path)
         val_df = pd.read_csv(self.val_split_path)
@@ -129,12 +121,6 @@ class CrackDataModule(pl.LightningDataModule):
         self.train_dataset = self._df_to_dataset(train_df, split_name="train", transform=self.train_transform)
         self.val_dataset = self._df_to_dataset(val_df, split_name="val", transform=self.eval_transform)
         self.test_dataset = self._df_to_dataset(test_df, split_name="test", transform=self.eval_transform)
-
-        if self.use_robustness_split and self.robustness_split_path and self.robustness_split_path.exists():
-            robust_df = pd.read_csv(self.robustness_split_path)
-            self.robust_dataset = self._df_to_dataset(
-                robust_df, split_name="robustness", transform=self.eval_transform
-            )
 
     def _resolve_path_column(self, df: pd.DataFrame) -> str:
         for c in PATH_CANDIDATES:
@@ -162,10 +148,6 @@ class CrackDataModule(pl.LightningDataModule):
             else:
                 raise ValueError(f"[{split_name}] unsupported label value: {row['label']!r}")
 
-        unique = sorted(set(labels))
-        if any(l not in (0, 1) for l in unique):
-            raise ValueError(f"[{split_name}] labels must be 0/1. Found: {unique}")
-
         return CrackDataset(paths, labels, transform=transform)
     
     def train_dataloader(self):
@@ -189,17 +171,6 @@ class CrackDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(
             self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=torch.cuda.is_available(),
-        )
-
-    def robustness_dataloader(self):
-        if self.robust_dataset is None:
-            raise RuntimeError("Robustness split not enabled or not found.")
-        return DataLoader(
-            self.robust_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,

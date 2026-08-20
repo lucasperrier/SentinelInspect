@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
@@ -11,7 +11,9 @@ from PIL import Image, UnidentifiedImageError
 
 
 PATH_CANDIDATES = ("path", "image_path", "relative_path")
-REQUIRED_BASE_COLUMNS = {"label"}
+CONTENT_COLUMN = "sha256"
+LABEL_COLUMN = "label"
+REQUIRED_BASE_COLUMNS = {LABEL_COLUMN}
 
 
 @dataclass
@@ -19,11 +21,20 @@ class ValidationReport:
     total_rows: int
     duplicate_rows: int
     duplicate_paths: int
+    duplicate_content: int
     unreadable_files: int
     corrupt_images: int
     missing_files: int
+    label_conflicts: int
     class_counts: dict
-    split_overlap_pairs: dict
+    split_overlap_paths: dict
+    split_overlap_content: dict
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
 
 
 def resolve_path_column(df: pd.DataFrame) -> str | None:
@@ -31,6 +42,10 @@ def resolve_path_column(df: pd.DataFrame) -> str | None:
         if c in df.columns:
             return c
     return None
+
+
+def resolve_content_column(df: pd.DataFrame) -> str | None:
+    return CONTENT_COLUMN if CONTENT_COLUMN in df.columns else None
 
 
 def check_required_columns(df: pd.DataFrame, name: str) -> tuple[list[str], str | None]:
@@ -57,6 +72,48 @@ def check_duplicates(df: pd.DataFrame, name: str, path_col: str | None) -> tuple
         errors.append(f"[{name}] duplicated {path_col} values: {dup_paths}")
 
     return errors, dup_rows, dup_paths
+
+
+def check_content_duplicates(df: pd.DataFrame, name: str, content_col: str | None) -> tuple[list[str], int]:
+    if content_col is None or content_col not in df.columns:
+        return [], 0
+
+    dup_content = int(df.duplicated(subset=[content_col]).sum())
+    if dup_content == 0:
+        return [], 0
+
+    unique = int(df[content_col].nunique())
+    return (
+        [f"[{name}] {dup_content} rows are byte-identical copies of another row "
+         f"({unique} unique images across {len(df)} rows)"],
+        dup_content,
+    )
+
+
+def check_label_conflicts(
+    df: pd.DataFrame,
+    name: str,
+    content_col: str | None,
+    label_col: str = LABEL_COLUMN,
+) -> tuple[list[str], int]:
+    """The same image bytes carrying more than one label.
+
+    Content-keyed splitting keeps these rows together, so this is never
+    leakage -- it is contradictory training data, which is worse and quieter.
+    """
+    if content_col is None or content_col not in df.columns or label_col not in df.columns:
+        return [], 0
+
+    labels_per_image = df.groupby(content_col, dropna=False)[label_col].nunique(dropna=False)
+    conflicted = labels_per_image[labels_per_image > 1]
+    if conflicted.empty:
+        return [], 0
+
+    return (
+        [f"[{name}] {len(conflicted)} images carry more than one label "
+         f"(same bytes, disagreeing {label_col})"],
+        int(len(conflicted)),
+    )
 
 
 def check_files_and_images(paths: Iterable[Path]) -> tuple[list[str], int, int, int]:
@@ -90,29 +147,38 @@ def check_files_and_images(paths: Iterable[Path]) -> tuple[list[str], int, int, 
     return errors, missing_files, unreadable, corrupt
 
 
-def check_split_overlap(split_to_df: dict[str, pd.DataFrame], split_to_path_col: dict[str, str]) -> tuple[list[str], dict]:
+
+def check_split_overlap(
+        split_to_df: dict[str, pd.DataFrame],
+        split_to_col: dict[str,str],
+        kind: str,
+) -> tuple[list[str], dict]:
     errors = []
     overlaps = {}
     names = list(split_to_df.keys())
 
     for i in range(len(names)):
-        for j in range(i + 1, len(names)):
+        for j in range (i + 1, len(names)):
             a, b = names[i], names[j]
-            col_a, col_b = split_to_path_col[a], split_to_path_col[b]
+            col_a, col_b = split_to_col.get(a), split_to_col.get(b)
+            if col_a is None or col_b is None:
+                continue
             set_a = set(split_to_df[a][col_a].astype(str))
             set_b = set(split_to_df[b][col_b].astype(str))
             inter = set_a.intersection(set_b)
             overlaps[f"{a}-{b}"] = len(inter)
             if inter:
-                errors.append(f"split overlap detected between {a} and {b}: {len(inter)} shared files")
-
+                errors.append(
+                    f"{kind} overlap detected between {a} and {b}: {len(inter)} shared images"
+                )
     return errors, overlaps
 
 
+
 def class_balance(df: pd.DataFrame) -> dict:
-    if "label" not in df.columns:
+    if LABEL_COLUMN not in df.columns:
         return {}
-    counts = df["label"].value_counts(dropna=False).to_dict()
+    counts = df[LABEL_COLUMN].value_counts(dropna=False).to_dict()
     return {str(k): int(v) for k, v in counts.items()}
 
 
@@ -127,20 +193,39 @@ def validate(
     train_path: Path | None = None,
     val_path: Path | None = None,
     test_path: Path | None = None,
-    robustness_path: Path | None = None,
     raw_root: Path | None = None,
-) -> tuple[ValidationReport, list[str]]:
+    check_files: bool = True,
+) -> ValidationReport:
+    """Validate a manifest and its split files.
+
+    Set `check_files=False` to skip the filesystem walk, which opens every
+    image and dominates runtime on large datasets.
+    """
     errors: list[str] = []
+    warnings: list[str] = []
 
     manifest = load_csv(manifest_path, "manifest")
     req_errs, manifest_path_col = check_required_columns(manifest, "manifest")
     errors += req_errs
 
+    manifest_content_col = resolve_content_column(manifest)
+    if manifest_content_col is None:
+        warnings.append(
+            f"[manifest] no {CONTENT_COLUMN!r} column: content-level duplication "
+            "and leakage cannot be detected"
+        )
+
     dup_errs, dup_rows, dup_paths = check_duplicates(manifest, "manifest", manifest_path_col)
     errors += dup_errs
 
+    content_warns, dup_content = check_content_duplicates(manifest, "manifest", manifest_content_col)
+    warnings += content_warns
+
+    conflict_errs, label_conflicts = check_label_conflicts(manifest, "manifest", manifest_content_col)
+    errors += conflict_errs
+
     missing = unreadable = corrupt = 0
-    if manifest_path_col is not None:
+    if manifest_path_col is not None and check_files:
         raw_root = raw_root or Path(".")
         file_paths = []
         for p in manifest[manifest_path_col].astype(str).tolist():
@@ -151,12 +236,12 @@ def validate(
 
     splits: dict[str, pd.DataFrame] = {}
     split_path_cols: dict[str, str] = {}
+    split_content_cols: dict[str, str] = {}
 
     for name, p in {
         "train": train_path,
         "val": val_path,
         "test": test_path,
-        "robustness": robustness_path,
     }.items():
         if p is not None and p.exists():
             df = load_csv(p, name)
@@ -164,26 +249,41 @@ def validate(
             errors += s_errs
             d_errs, _, _ = check_duplicates(df, name, s_path_col)
             errors += d_errs
+
+            s_content_col = resolve_content_column(df)
+            c_warns, _ = check_content_duplicates(df, name, s_content_col)
+            warnings += c_warns
+
             if s_path_col is not None:
                 splits[name] = df
                 split_path_cols[name] = s_path_col
+            if s_content_col is not None:
+                split_content_cols[name] = s_content_col
 
-    overlap_pairs = {}
+    overlap_paths: dict = {}
+    overlap_content: dict = {}
     if len(splits) >= 2:
-        overlap_errs, overlap_pairs = check_split_overlap(splits, split_path_cols)
-        errors += overlap_errs
+        path_errs, overlap_paths = check_split_overlap(splits, split_path_cols, kind="path")
+        errors += path_errs
 
-    report = ValidationReport(
+        content_errs, overlap_content = check_split_overlap(splits, split_content_cols, kind="content")
+        errors += content_errs
+
+    return ValidationReport(
         total_rows=len(manifest),
         duplicate_rows=dup_rows,
         duplicate_paths=dup_paths,
+        duplicate_content=dup_content,
         unreadable_files=unreadable,
         corrupt_images=corrupt,
         missing_files=missing,
+        label_conflicts=label_conflicts,
         class_counts=class_balance(manifest),
-        split_overlap_pairs=overlap_pairs,
+        split_overlap_paths=overlap_paths,
+        split_overlap_content=overlap_content,
+        errors=errors,
+        warnings=warnings,
     )
-    return report, errors
 
 
 def main() -> int:
@@ -192,33 +292,46 @@ def main() -> int:
     parser.add_argument("--train", type=Path, default=None, help="Path to train.csv")
     parser.add_argument("--val", type=Path, default=None, help="Path to val.csv")
     parser.add_argument("--test", type=Path, default=None, help="Path to test.csv")
-    parser.add_argument("--robustness", type=Path, default=None, help="Path to robustness.csv")
     parser.add_argument("--raw-root", type=Path, default=Path("."), help="Base dir for relative paths")
+    parser.add_argument(
+        "--skip-file-checks",
+        action="store_true",
+        help="Skip opening every image. Much faster; only checks the tabular artifacts.",
+    )
     args = parser.parse_args()
 
-    report, errors = validate(
+    report = validate(
         manifest_path=args.manifest,
         train_path=args.train,
         val_path=args.val,
         test_path=args.test,
-        robustness_path=args.robustness,
         raw_root=args.raw_root,
+        check_files=not args.skip_file_checks,
     )
 
     print("=== Dataset Validation Report ===")
-    print(f"total_rows: {report.total_rows}")
-    print(f"duplicate_rows: {report.duplicate_rows}")
-    print(f"duplicate_paths: {report.duplicate_paths}")
-    print(f"missing_files: {report.missing_files}")
-    print(f"unreadable_files: {report.unreadable_files}")
-    print(f"corrupt_images: {report.corrupt_images}")
-    print(f"class_counts: {report.class_counts}")
-    if report.split_overlap_pairs:
-        print(f"split_overlap_pairs: {report.split_overlap_pairs}")
+    print(f"total_rows:          {report.total_rows}")
+    print(f"duplicate_rows:      {report.duplicate_rows}")
+    print(f"duplicate_paths:     {report.duplicate_paths}")
+    print(f"duplicate_content:   {report.duplicate_content}")
+    print(f"label_conflicts:     {report.label_conflicts}")
+    print(f"missing_files:       {report.missing_files}")
+    print(f"unreadable_files:    {report.unreadable_files}")
+    print(f"corrupt_images:      {report.corrupt_images}")
+    print(f"class_counts:        {report.class_counts}")
+    if report.split_overlap_paths:
+        print(f"split_overlap_paths:   {report.split_overlap_paths}")
+    if report.split_overlap_content:
+        print(f"split_overlap_content: {report.split_overlap_content}")
 
-    if errors:
+    if report.warnings:
+        print("\nWarnings:")
+        for w in report.warnings:
+            print(f"- {w}")
+
+    if report.errors:
         print("\nValidation FAILED:")
-        for e in errors:
+        for e in report.errors:
             print(f"- {e}")
         return 1
 

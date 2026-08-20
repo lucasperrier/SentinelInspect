@@ -15,11 +15,9 @@ class DataConfig(BaseModel):
     train_split_path: str
     val_split_path: str
     test_split_path: str
-    robustness_split_path: str | None = None
     raw_root: str = "."
     validate_artifacts: bool = True
     fail_on_validation_error: bool = True
-    use_robustness_split: bool = True
 
     batch_size: int = 32
     num_workers: int = 4
@@ -92,7 +90,7 @@ class RuntimeConfig(BaseModel):
     preprocessing: Optional[PreprocessingConfig] = None
 
     checkpoint_path: Optional[str] = None
-    split: Optional[Literal["train", "val", "test", "robustness"]] = None
+    split: Optional[Literal["train", "val", "test"]] = None
     device: Optional[Literal["cpu", "gpu", "auto"]] = None
     image_path: Optional[str] = None
 

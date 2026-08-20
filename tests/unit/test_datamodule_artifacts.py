@@ -161,5 +161,7 @@ def test_datamodule_rejects_non_binary_labels(tmp_path: Path):
         validate_artifacts=False,  # isolate label check in datamodule
     )
 
-    with pytest.raises(ValueError, match="labels must be 0/1"):
+    # the mapping in _df_to_dataset rejects anything outside the known label
+    # vocabulary, so an out-of-contract value never reaches a numeric check
+    with pytest.raises(ValueError, match="unsupported label value"):
         dm.setup()
