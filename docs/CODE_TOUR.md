@@ -300,3 +300,209 @@ dispatch on your type; compose when you just need the other object's behaviour.
 4. `_shared_step` in `resnet50.py` has no `else` branch.
 5. Pydantic validation runs but `build_model` uses the raw dict — Section 3.
 6. Nothing on this path is tested at all.
+
+---
+
+## Session 2 — evaluation, inference, explainability, and the empty half
+
+Session 1 followed one command all the way down. This session covers the other
+three entrypoints and then inventories what does not exist yet.
+
+---
+
+### A · Evaluation — `src/evaluation/evaluate.py`
+
+```bash
+python -m src.evaluation.evaluate "checkpoint_path='runs/.../model.ckpt'"
+```
+
+Same Hydra + Pydantic front end as training, reading `configs/eval.yaml`. Then:
+build the datamodule, load the checkpoint, run the test set, write a bundle of
+artifacts to `reports/eval/`:
+
+| File | Contents |
+| --- | --- |
+| `metrics.json` | accuracy, F1, AUC, confusion matrix, per-class report |
+| `classification_report.txt` | the same report as text |
+| `confusion_matrix.npy` | the matrix as an array |
+| `predictions.npz` | `y_true`, `y_pred`, `y_prob_pos` per sample |
+
+`predictions.npz` is the important one: keeping per-sample outputs means any new
+metric can be computed later without re-running the model.
+
+**Defects on this path.**
+
+1. **The test set is scored twice.** `trainer.test(...)` runs a full pass, then
+   `predict_on_test(...)` runs a second one to collect raw arrays Lightning did
+   not return. Two forward passes over 5,889 images — about 5 minutes of the
+   10 that a CPU evaluation takes.
+2. **`setup()` is called twice.** Explicitly at `datamodule.setup(stage="test")`,
+   then again by `trainer.test(datamodule=...)`. Each call re-runs dataset
+   validation over the whole manifest.
+3. **`test_loader` is assigned and never used.**
+4. **The loss is a mean of batch means.** `np.mean(losses)` averages per-batch
+   figures, but the final batch is usually smaller, so it is over-weighted. Correct
+   would be to accumulate `loss * len(batch)` and divide by the sample count.
+5. **The output directory is hardcoded** to `reports/eval`, so every run
+   overwrites the previous one. The historical `reports/eval_trained_vit/` folders
+   were renamed by hand.
+6. **`split` is validated and ignored.** `configs/eval.yaml` sets `split: test`
+   and `RuntimeConfig` constrains it, but the code always calls
+   `test_dataloader()`. Evaluating on val is impossible despite looking configurable.
+7. **`except Exception` around `roc_auc_score`** sets AUC to `None` on *any*
+   failure, including a bug in the calling code. Only the "one class present"
+   case deserves catching.
+8. **No `needs_review` threshold and no per-sample confidence in the report.**
+   `predictions.npz` has the probabilities, but nothing turns them into the
+   triage decision the README promises.
+
+---
+
+### B · Inference — `src/inference/predict.py`
+
+After the Stage 1 fixes this is 61 lines: load config, load checkpoint via the
+factory, build the *shared* inference transform, run one image, print a dict.
+
+```python
+tfm = build_inference_transforms(
+    runtime.preprocessing.model_dump() if runtime.preprocessing else None
+)
+image = Image.open(image_path).convert("RGB")
+x = tfm(image=np.array(image))["image"].unsqueeze(0).to(device)
+```
+
+`np.array(image)` because albumentations works on arrays; `["image"]` because
+albumentations returns a dict; `.unsqueeze(0)` to add the batch dimension a
+model always expects.
+
+**What is still missing for a real inference core.**
+
+- The output is a printed dict, not a typed object. `predicted_class: 0` rather
+  than `no_crack`, no `needs_review`, no model provenance.
+- The model is loaded from disk on every invocation. Fine for a CLI, fatal for a
+  service handling requests.
+- Nothing is reusable: a batch path or an HTTP route would have to copy this.
+
+That is precisely what Stage 4 replaces with a `Predictor` class.
+
+---
+
+### C · Explainability — `src/explainability/`
+
+836 lines, the largest subsystem in the repo, and entirely disconnected from
+the other three entrypoints.
+
+**`grad_cam.py` (157 lines) — the best-written file here.**
+
+Grad-CAM answers "which regions of the image drove this prediction?" It works
+by capturing two things during a forward/backward pass using **hooks**:
+
+```python
+self._fwd_handle = target_layer.register_forward_hook(self._forward_hook)
+self._bwd_handle = target_layer.register_full_backward_hook(self._backward_hook)
+```
+
+A hook is a callback PyTorch invokes when data flows through a module. The
+forward hook stores the layer's *activations*; the backward hook stores the
+*gradients* of the chosen class score with respect to those activations. Neither
+is otherwise reachable — they are intermediate values discarded after the pass.
+
+For a CNN the activations are `(B, C, H, W)` and the classic algorithm applies:
+
+```python
+weights = grads.mean(dim=(2, 3), keepdim=True)   # (B,C,1,1) how much each channel mattered
+cam = (weights * acts).sum(dim=1, keepdim=True)  # (B,1,H,W) weighted sum of feature maps
+cam = F.relu(cam)                                # keep only positive evidence
+cam = self._normalize(cam)                       # per-sample rescale to [0,1]
+```
+
+Averaging the gradient over space gives one importance number per channel; the
+weighted sum turns 2048 feature maps into a single relevance map; ReLU discards
+evidence *against* the class.
+
+For a ViT the activations are `(B, N, D)` tokens, so there is no spatial grid to
+average over. The file handles that separately, dropping the CLS token and
+reshaping the remaining patches back into a grid:
+
+```python
+if N == 1 + H_p * W_p:      # timm ViTs prepend a CLS token
+    acts_p, grads_p = acts[:, 1:, :], grads[:, 1:, :]
+token_scores = (acts_p * grads_p).sum(dim=2)   # (B, H_p*W_p)
+cam = token_scores.view(B, 1, H_p, W_p)
+```
+
+Hooks stay registered until removed, so `close()` exists and must be called.
+There is no context-manager form, which is the one thing this class is missing.
+
+**`shap_utils.py` (288 lines)** — SHAP over superpixels for CNNs and over
+patches for ViTs, via `KernelExplainer`. It re-implements ImageNet normalisation
+inline rather than importing it.
+
+**`utils.py` (98 lines)** — denormalise, colourise, overlay, save PNG. Defines
+`IMAGENET_MEAN` / `IMAGENET_STD` as yet another copy of those constants.
+
+**`run_explainability.py` (293 lines) — orphaned.**
+
+This entrypoint does not use Hydra at all:
+
+```python
+def load_config(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+```
+
+Plain `yaml.safe_load` plus `argparse`. So the repository contains **two config
+systems**, and this one reads files from `configs/old/` — a directory already
+scheduled for deletion. It also carries a **fourth** copy of `build_model`,
+which dispatches on `cfg["model"]` (the timm backbone name) where the other
+three used `cfg["name"]` (the registry key). Different key, same function name.
+
+And `vit_grid_from_name` ignores its own argument:
+
+```python
+def vit_grid_from_name(model_name: str) -> Tuple[int, int]:
+    return (14, 14)      # correct only for patch16 at 224
+```
+
+---
+
+### D · The empty half — 39 files
+
+| Group | Files | Verdict |
+| --- | --- | --- |
+| `src/inference_service/` | 5 | Stage 6 builds these |
+| `src/inference/` core | `contracts.py`, `model_loader.py`, `batch_predict.py` | Stage 4 |
+| `src/evaluation/` | `metrics.py`, `reports.py` | Stage 4, extracting from `evaluate.py` |
+| `scripts/` | 5 wrappers + `start_api.sh` | Redundant: `python -m` already works. Delete. |
+| `src/mlops/` | 4 | Out of scope per the plan. Delete. |
+| `src/monitoring/` | 3 | Out of scope. Delete. |
+| `src/jobs/` | 3 | Out of scope. Delete. |
+| `src/utils/` | 4 | Speculative. Delete until something needs them. |
+| `src/data/dataset.py`, `schemas.py` | 2 | Superseded: the dataset lives in `datamodule.py`. Delete. |
+| `src/preprocessing/preprocess.py` | 1 | Superseded by `transforms.py`. Delete. |
+| `src/training/callbacks.py`, `reproducibility.py` | 2 | Superseded: Lightning provides both. Delete. |
+| `src/models/factory.py` | — | **Filled in Stage 1.** |
+| `pyproject.toml`, `.github/workflows/ci.yaml`, `docker/` | 4 | Stages 2 and 8 |
+
+Roughly 24 of the 39 should simply be deleted. An empty file is a promise the
+repository does not keep.
+
+---
+
+### E · One fact, many homes
+
+The ImageNet normalisation constants appear in **eight** places:
+
+```
+src/preprocessing/transforms.py   DEFAULTS
+src/data/datamodule.py            fallback dict (now redundant)
+configs/train.yaml                preprocessing block
+configs/eval.yaml                 preprocessing block
+configs/inference.yaml            preprocessing block
+src/explainability/utils.py       IMAGENET_MEAN / IMAGENET_STD
+src/explainability/shap_utils.py  inline, twice
+```
+
+The three config files are legitimate — that is configuration. The code copies
+are not: change the normalisation and explainability silently disagrees with
+training. `transforms.DEFAULTS` should be the only default in code.
