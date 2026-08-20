@@ -1,208 +1,298 @@
 # SentinelInspect
 
-## Production-first visual inspection triage system
+**A visual inspection triage system: reproducible data contracts, a shared inference core, and a deployable API.**
 
-SentinelInspect is a computer vision project built to demonstrate how a classification
-prototype can be turned into a more production-ready inspection workflow.
+[![CI](https://github.com/lucasperrier/SentinelInspect/actions/workflows/ci.yaml/badge.svg)](https://github.com/lucasperrier/SentinelInspect/actions/workflows/ci.yaml)
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-The use case is crack classification, but the real goal is broader:
+SentinelInspect classifies concrete surface images as `crack` or `no_crack`, attaches a
+confidence score, and **routes uncertain cases to human review** instead of forcing a
+decision.
 
-> build a visual inspection triage system with reproducible data, standardized
-> evaluation, deployable inference, and basic delivery infrastructure
-
-This repository is a portfolio project for ML Engineer roles, so the emphasis is not only
-on model training. The emphasis is on the parts that make a system credible to ship.
-
-See [`docs/architecture.md`](docs/architecture.md) for the system design and
-[`docs/roadmap.md`](docs/roadmap.md) for the full phased plan.
-
----
-
-## What this project is
-
-SentinelInspect is a **decision-support system** for inspection workflows.
-
-The intended behavior is:
-
-1. ingest an image
-2. predict `crack` or `no_crack`
-3. attach a confidence score
-4. route uncertain cases to manual review
-5. log results for later analysis
-
-This is a triage framing, not a claim of full inspection autonomy.
+The classifier is the least interesting part. The project exists to demonstrate the
+engineering around a model: a dataset that is a versioned, validated contract; one
+inference core shared by the CLI, offline evaluation and the HTTP API so they cannot
+disagree; tests aimed at failure modes; and a container that is reproducible from a
+clean clone.
 
 ---
 
-## Why this project exists
-
-Many CV projects stop at training accuracy. That is not enough for a strong ML engineering
-portfolio. A deployable system also has to answer:
-
-- what exact data was used for training
-- are splits deterministic and reproducible
-- what artifacts define the evaluation result
-- how is inference exposed outside training code
-- what happens to low-confidence predictions
-- how would the system be tested, packaged, and run
-
-This project focuses on those questions.
-
----
-
-## What works today
-
-The following components contain real, functioning implementation:
-
-| Area | File(s) | Status |
-| --- | --- | --- |
-| Manifest generation (paths, labels, dims, SHA256) | `sentinelinspect/data/build_manifest.py` | Implemented |
-| Deterministic stratified split generation | `sentinelinspect/data/splitters.py` | Implemented |
-| Dataset integrity + split-leakage validation | `sentinelinspect/data/validate_dataset.py` | Implemented |
-| Lightning datamodule consuming persisted CSVs | `sentinelinspect/data/datamodule.py` | Implemented |
-| Albumentations preprocessing pipelines | `sentinelinspect/preprocessing/transforms.py` | Implemented |
-| ResNet-50 / ViT Lightning modules | `sentinelinspect/models/resnet50.py`, `sentinelinspect/models/vit.py` | Implemented |
-| Hydra + MLflow training entrypoint | `sentinelinspect/training/train.py` | Implemented* |
-| Offline evaluation + artifact writing | `sentinelinspect/evaluation/evaluate.py` | Implemented* |
-| Single-image checkpoint inference | `sentinelinspect/inference/predict.py` | Implemented |
-| Grad-CAM / SHAP explainability | `sentinelinspect/explainability/` | Implemented |
-| Typed config validation (Hydra + Pydantic) | `sentinelinspect/config/schema.py`, `sentinelinspect/config/load.py` | Implemented |
-| Data-layer unit tests | `tests/`, `tests/unit/` | Implemented |
-
-`*` Training, evaluation, single-image inference and the explainability run have each been
-executed end to end and produce their artifacts. Reported accuracy numbers from before
-August 2026 are not trustworthy: they were measured on splits contaminated by a duplicated
-dataset, which is described in `docs/CODE_TOUR.md`.
-
-This is already well beyond a notebook-only project.
-
----
-
-## What is scaffolding, not yet built
-
-These paths exist as empty placeholder files. They are planned system surfaces, not
-completed features:
-
-- **Inference service** — `sentinelinspect/inference_service/` (`app.py`, `routes.py`, `schemas.py`, `dependencies.py`, `logging.py`)
-- **Shared inference core** — `sentinelinspect/inference/contracts.py`, `model_loader.py`, `batch_predict.py`
-- **Evaluation helpers** — `sentinelinspect/evaluation/metrics.py`, `reports.py`
-- **Delivery** — `docker/Dockerfile.api`, `.github/workflows/ci.yaml`, `pyproject.toml`
-
-Thirteen empty files remain, each owned by a specific phase below. The speculative
-directories that previously sat here empty — `sentinelinspect/mlops/`, `sentinelinspect/monitoring/`, `sentinelinspect/jobs/`,
-`sentinelinspect/utils/`, `scripts/` and `configs/old/` — have been deleted. An empty file is a promise
-the repository does not keep.
-
----
-
-## Output contract
-
-The target prediction contract for each image:
-
-- `predicted_label`
-- `confidence_score`
-- `needs_review`
-- `model_metadata` (model name, checkpoint, version)
-
-Status today: predicted label and confidence are implemented in the inference path;
-`needs_review` is formalized in Phase 2; metadata/provenance is completed with the service
-layer in Phase 3.
-
----
-
-## Repository structure
+## Architecture
 
 ```
-.
-├── configs/            # Hydra config groups: data, model, trainer, mlflow, service
-├── data/
-│   └── processed/      # manifests/ and splits/ — the dataset contract
-├── docker/             # Dockerfile.api (to be implemented)
-├── docs/               # architecture.md, roadmap.md, CODE_TOUR.md
-├── reports/            # evaluation bundles
-├── runs/               # training checkpoints / MLflow run artifacts
-├── sentinelinspect/
-│   ├── config/         # typed config schema + loader
-│   ├── data/           # manifest, splitters, validation, datamodule
-│   ├── evaluation/     # evaluate.py (+ metrics/reports, planned)
-│   ├── explainability/ # Grad-CAM, SHAP
-│   ├── inference/      # predict.py (+ shared core, planned)
-│   ├── inference_service/  # FastAPI service (planned)
-│   ├── models/         # base, resnet50, vit, factory
-│   ├── preprocessing/  # transforms
-│   └── training/       # train.py
-├── tests/
-├── README.md
-└── requirements.txt
+data/raw/**  ──build_manifest──▶  manifest.csv  ──splitters──▶  train/val/test.csv
+                                       │                              │
+                                       └────── validate_dataset ──────┘
+                                                     │  fails on leakage
+                                              CrackDataModule
+                                                     │
+                        ┌────────────────────────────┼───────────────────────┐
+                        ▼                            ▼                       ▼
+                    train.py                    Predictor              (same core)
+              Hydra config + MLflow      load once · preprocess · forward
+                        │                softmax · triage · typed contract
+                        ▼                            │
+                   checkpoint ─────────────────▶─────┴──▶ CLI · evaluate.py · FastAPI
 ```
 
+**Three properties hold this together.**
+
+1. **The dataset is a contract, not a directory.** Training never walks `data/raw/`. It
+   reads `train.csv`, a file you can commit, diff and hand to someone else. Adding images
+   tomorrow does not silently change what the model trained on.
+
+2. **Splits are keyed on image content.** `assign_split(sha256)` is a pure function — no
+   RNG. The same image lands in the same split on any machine, forever, and byte-identical
+   duplicates can never straddle the train/test boundary. Adding 5,000 images does not
+   reshuffle the existing ones.
+
+3. **One inference core.** Every prediction — CLI, evaluation, HTTP — goes through
+   `Predictor._probabilities`, using the same preprocessing pipeline as training. Three
+   thin adapters over one core cannot drift apart.
+
+Detail in [`docs/architecture.md`](docs/architecture.md); a file-by-file walkthrough in
+[`docs/CODE_TOUR.md`](docs/CODE_TOUR.md); design rationale and known limitations in
+[`docs/INTERVIEW_NOTES.md`](docs/INTERVIEW_NOTES.md).
+
 ---
 
-## Roadmap at a glance
-
-Full detail and success criteria in [`docs/roadmap.md`](docs/roadmap.md).
-
-- **Phase 0 — Make the core path executable** *(must ship, first)* — fix the datamodule
-  call signature in train/eval, add label encoding, ship a fixture dataset, run end-to-end once.
-- **Phase 1 — Data artifacts as the source of truth** *(must ship, largely done)* — route
-  remaining paths through config; fail fast on invalid artifacts.
-- **Phase 2 — Standardize the evaluation bundle** *(must ship)* — move metric helpers into
-  `metrics.py`, save per-sample confidence, add the `needs_review` triage rule.
-- **Phase 3 — Shared inference and a usable API** *(must ship)* — one prediction core behind
-  CLI, batch, and FastAPI; return the full output contract.
-- **Phase 4 — Real packaging, CI, and Docker** *(must ship)* — fill `pyproject.toml`, write a
-  real CI workflow, implement both Dockerfiles.
-- **Phase 5 — Minimal monitoring hooks** *(nice to have)* — structured prediction logging and
-  one offline summary.
-
----
-
-## Getting started
-
-> Note: a clean end-to-end run is Phase 0 work. The commands below describe the intended
-> workflow and become fully reproducible once Phase 0 lands.
+## Quickstart
 
 ```bash
-# install (editable, with the dev tools)
+git clone https://github.com/lucasperrier/SentinelInspect.git
+cd SentinelInspect
 python -m venv .venv && source .venv/bin/activate
+
+# CPU-only machine? Install torch from the CPU index first: the default Linux
+# wheel pulls several GB of CUDA libraries you will never execute.
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+
 pip install -e ".[dev]"
+pytest                       # 99 tests, no dataset required
+```
 
-# CPU-only machine or container? install torch from the CPU index first,
-# otherwise pip pulls several GB of CUDA wheels you will never use:
-#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+The suite builds its own tiny checkpoint, so it needs neither the dataset nor a trained
+model.
 
-# explainability extras (SHAP needs scikit-image; Grad-CAM works without it)
-#   pip install -e ".[dev,explain]"
+### The full pipeline
 
-# run the tests
-pytest
+```bash
+# 1. inventory data/raw/ -- paths, labels, dimensions, SHA256 per image
+sentinelinspect-manifest
 
-# 1. build the manifest from data/raw/
-python -m sentinelinspect.data.build_manifest
+# 2. deterministic splits, keyed on content
+sentinelinspect-split
 
-# 2. generate deterministic splits
-python -m sentinelinspect.data.splitters
-
-# 3. validate dataset integrity and split overlap
-python -m sentinelinspect.data.validate_dataset \
+# 3. prove the invariants: files readable, no duplicates across splits, no label conflicts
+sentinelinspect-validate \
   --manifest data/processed/manifests/manifest.csv \
   --train data/processed/splits/train.csv \
-  --val data/processed/splits/val.csv \
-  --test data/processed/splits/test.csv
+  --val   data/processed/splits/val.csv \
+  --test  data/processed/splits/test.csv \
+  --raw-root data/raw
 
-# 4. train (Hydra-configured, MLflow-tracked)
-python -m sentinelinspect.training.train
+# 4. train (Hydra-configured, MLflow-tracked) -- needs the train extra
+pip install -e ".[train]"
+sentinelinspect-train model.freeze_backbone=true trainer.max_epochs=3
 
-# 5. evaluate a checkpoint into reports/
-python -m sentinelinspect.evaluation.evaluate checkpoint_path=/path/to/model.ckpt
+# 5. evaluate a checkpoint into a report bundle
+sentinelinspect-evaluate "checkpoint_path='runs/<run>/<file>.ckpt'" split=test
 
-# 6. single-image inference
-#    quote the overrides: checkpoint filenames contain "=", which Hydra's
-#    override parser would otherwise read as a separator
-python -m sentinelinspect.inference.predict \
-  "checkpoint_path='runs/<experiment>/<model>-epoch=00-val_loss=0.20.ckpt'" \
+# 6. classify one image
+sentinelinspect-predict \
+  "checkpoint_path='runs/<run>/<file>.ckpt'" \
   "image_path='data/raw/ccic/Positive/00001.jpg'"
+```
 
-# 7. Grad-CAM and SHAP explanations for a checkpoint
-python -m sentinelinspect.explainability.run_explainability --config configs/explainability/resnet50.yaml
+> Quote the Hydra overrides. Checkpoint filenames contain `=` (`epoch=00`), which the
+> override parser otherwise reads as a separator.
+
+Swap the model with a config group — no code change:
+
+```bash
+sentinelinspect-train model=vit
+```
+
+---
+
+## The API
+
+```bash
+pip install -e ".[api]"
+SENTINELINSPECT_CHECKPOINT=runs/<run>/<file>.ckpt \
+  uvicorn sentinelinspect.inference_service.app:app --port 8000
+```
+
+The model loads during startup, before the first request is accepted. A missing or
+unreadable checkpoint crashes the process rather than letting it report healthy and fail
+every call.
+
+### `GET /health`
+
+```json
+{
+  "status": "ok",
+  "model_loaded": true,
+  "model_name": "resnet50",
+  "checkpoint_sha256": "3f2a8c1d9e4b7a05",
+  "package_version": "0.1.0",
+  "review_band": [0.35, 0.65]
+}
+```
+
+The checkpoint fingerprint is there so you can tell two deployments apart. "Is it up?" is
+rarely the question you have during an incident; "which weights are up?" is.
+
+### `POST /predict`
+
+```bash
+curl -F "file=@image.jpg;type=image/jpeg" http://localhost:8000/predict
+```
+
+```json
+{
+  "predicted_label": "crack",
+  "predicted_index": 1,
+  "confidence_score": 0.9731,
+  "probabilities": { "no_crack": 0.0269, "crack": 0.9731 },
+  "needs_review": false,
+  "review_reason": null,
+  "model_metadata": {
+    "name": "resnet50",
+    "backbone": "resnet50",
+    "checkpoint_path": "runs/.../model.ckpt",
+    "checkpoint_sha256": "3f2a8c1d9e4b7a05",
+    "package_version": "0.1.0",
+    "class_names": ["no_crack", "crack"]
+  },
+  "latency_ms": 41.2
+}
+```
+
+This is the same `Prediction` object the CLI prints and offline evaluation produces — one
+Pydantic definition, not three.
+
+| Status | Cause |
+| --- | --- |
+| `200` | Prediction returned |
+| `400` | Empty upload, or bytes that are not a decodable image |
+| `413` | Upload exceeds `SENTINELINSPECT_MAX_UPLOAD_MB` (default 10) |
+| `415` | Content type is not `image/*` |
+| `422` | No file field in the request |
+| `503` | Model not loaded |
+
+Interactive docs at `/docs`.
+
+### Container
+
+```bash
+docker build -f docker/Dockerfile.api -t sentinelinspect-api .
+docker run --rm -p 8000:8000 \
+  -v "$(pwd)/runs:/models:ro" \
+  -e SENTINELINSPECT_CHECKPOINT=/models/<run>/<file>.ckpt \
+  sentinelinspect-api
+```
+
+Multi-stage, non-root, CPU-only torch, `HEALTHCHECK` on `/health`. Weights are mounted
+rather than baked in, so a new checkpoint does not mean a new image.
+
+---
+
+## Triage: the `needs_review` rule
+
+A prediction is routed to a human when `p(crack)` falls inside a confidence band:
+
+```yaml
+# configs/review/default.yaml
+lower: 0.35
+upper: 0.65
+```
+
+The band is **two-sided**. A one-sided confidence floor would flag `p=0.48` and wave
+through `p=0.52`, though both are equally uncertain.
+
+It is tuned on the validation split under a review-capacity budget, not guessed —
+`evaluation.metrics.tune_review_band` finds the narrowest band catching a target share of
+the model's errors while flagging no more than a set fraction of traffic. Unconstrained,
+"catch more errors" always widens to `[0, 1]`.
+
+---
+
+## Testing
+
+```bash
+pytest                       # 99 tests in ~7 seconds
+```
+
+Aimed at failure modes rather than line coverage:
+
+| Area | What is pinned |
+| --- | --- |
+| Splitting | Determinism; independence from row order; **stability when the dataset grows**; byte-identical images never separated |
+| Validation | Content overlap the path check cannot see; warnings vs errors; label conflicts |
+| Contract | Review-band edges; inverted bands rejected; label/index consistency |
+| Predictor | Path, bytes, PIL and array inputs all agree; image and tensor paths agree; corrupt input raises a typed error; the model loads once |
+| Metrics | Sample-weighted loss vs mean-of-batch-means, with the numbers that made it wrong |
+| API | Health, prediction, missing file, wrong content type, corrupt upload, oversized upload, startup failure |
+
+Two tests exist specifically to keep others honest: one pins the *old* path-keyed
+behaviour, so the leakage regression test cannot pass vacuously on a fixture with no
+duplicates; and one compares an HTTP response against the app's own `Predictor` instance,
+so "shared inference core" is verified rather than asserted.
+
+---
+
+## Design decisions
+
+**Hashing instead of `train_test_split(random_state=42)`.** A hash is a pure function of
+the item, so the split is stable under dataset growth. The cost is that class balance is
+approximate rather than exact. Exact stratification requires ranking within each class,
+which makes an item's split depend on every other item — stability and exactness are
+mutually exclusive, and stability is worth more.
+
+**The checkpoint outranks the config on architecture.** A `.ckpt` knows what it is.
+Letting `configs/model/*.yaml` win means editing a YAML silently invalidates weights on
+disk, and you find out through shape-mismatch errors at deploy time.
+
+**Evaluation runs through the Predictor.** Otherwise a reported metric and a served
+decision are computed by different code. This project previously had a torchvision
+transform in the CLI and albumentations everywhere else; the measured divergence was
+0.035 max tensor delta — small, uncontrolled, and growing.
+
+**MLflow is not a core dependency.** It is a training concern. Keeping it in an extra
+keeps Flask, SQLAlchemy, alembic, gunicorn, graphene and the Docker SDK out of the
+inference container.
+
+**Warnings and errors are different.** Duplicate images *within* one split over-weight
+that image; duplicates *across* splits invalidate the measurement. The first is a warning,
+the second stops the pipeline.
+
+---
+
+## Deliberately out of scope
+
+Batch inference, drift monitoring, a model registry, authentication, a queue, a database,
+Kubernetes, ONNX export, and further hyperparameter search. The scope was one week and
+fixed in advance. Six things that work beat twelve that half-work.
+
+---
+
+## Repository layout
+
+```
+configs/           Hydra config groups: data, model, trainer, mlflow, review, service
+docker/            Dockerfile.api
+docs/              architecture.md · roadmap.md · CODE_TOUR.md · INTERVIEW_NOTES.md
+sentinelinspect/
+  config/          typed schema + loader (Pydantic over Hydra)
+  data/            manifest · splitters · validation · datamodule
+  evaluation/      evaluate · metrics · reports
+  explainability/  Grad-CAM · SHAP
+  inference/       contracts · model_loader · predictor · predict (CLI)
+  inference_service/  FastAPI app · routes · schemas · dependencies · logging
+  models/          base · resnet50 · vit · factory
+  preprocessing/   the transform pipeline training and serving share
+  training/        train.py
+tests/             unit + integration
 ```

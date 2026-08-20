@@ -6,7 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import hydra
-import mlflow
+try:
+    import mlflow
+except ModuleNotFoundError as exc:  # pragma: no cover - import-time guard
+    raise ModuleNotFoundError(
+        "Training requires MLflow, which is not part of the core install so that "
+        "the inference container stays slim. Install it with:\n"
+        '    pip install -e ".[train]"'
+    ) from exc
 import torch
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer, seed_everything

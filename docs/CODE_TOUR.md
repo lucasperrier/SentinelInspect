@@ -506,3 +506,81 @@ sentinelinspect/explainability/shap_utils.py  inline, twice
 The three config files are legitimate — that is configuration. The code copies
 are not: change the normalisation and explainability silently disagrees with
 training. `transforms.DEFAULTS` should be the only default in code.
+
+---
+
+## Session 3 — the inference core and the service
+
+Added after sessions 1 and 2; these are the modules that did not exist then.
+
+### `inference/contracts.py` — the shape everything agrees on
+
+Pydantic models, not dataclasses, so FastAPI serialises the same definition the CLI
+returns and generates the OpenAPI schema from it. A second definition in the service
+layer would drift the first time a field was added to one of them.
+
+`ReviewPolicy` is the triage rule. It is a *band*, not a floor:
+
+```python
+def evaluate(self, positive_probability: float) -> tuple[bool, Optional[ReviewReason]]:
+    if self.lower <= positive_probability <= self.upper:
+        return True, ReviewReason.LOW_CONFIDENCE
+    return False, None
+```
+
+`CLASS_NAMES` and `POSITIVE_INDEX` are fixed here and pinned by a test, because they must
+match the datamodule's label encoding (`crack` -> 1). If they ever disagree, every
+prediction inverts and nothing raises.
+
+### `inference/model_loader.py` — one answer to "how do I load this?"
+
+Two decisions worth knowing:
+
+`resolve_model_config` merges the requested config with the checkpoint's stored
+`hyper_parameters`, and **the checkpoint wins on architecture** (`name`, `model`,
+`num_classes`), warning on any mismatch. The artifact knows what it is; a YAML file
+claiming otherwise is how you get shape errors at deploy time.
+
+`pretrained` is forced off. The checkpoint carries every weight, so letting timm fetch
+ImageNet weights first downloads tens of megabytes only to overwrite them.
+
+### `inference/predictor.py` — the core
+
+Everything funnels through one method:
+
+```python
+@torch.inference_mode()
+def _probabilities(self, batch: torch.Tensor) -> torch.Tensor:
+    logits = self.model(batch.to(self.device))
+    return torch.softmax(logits, dim=1).cpu()
+```
+
+`predict_image`, `predict_images` and `predict_tensor` are adapters over it.
+`predict_tensor` exists so offline evaluation — which already has preprocessed tensors
+from the dataloader — uses the identical forward pass as serving.
+
+`_to_rgb_array` normalises the four input shapes callers actually have (path, bytes, PIL,
+array) and raises `InvalidImageError` for anything undecodable. That distinct type is what
+lets the API answer 400 instead of 500: a corrupt upload is the caller's fault.
+
+### `evaluation/metrics.py` and `reports.py`
+
+Pure functions over arrays, no IO — which is what makes `weighted_mean_loss` and
+`tune_review_band` testable without a checkpoint.
+
+`tune_review_band` takes a `max_review_rate`. Without it the search is degenerate:
+widening the band always catches more errors, so the optimum is always `[0, 1]`.
+
+### `inference_service/` — four files, no inference logic
+
+- `dependencies.py` composes the *same* Hydra config the CLI reads, so the band the API
+  applies is the band evaluation measured. It also holds the single `Predictor`.
+- `app.py` loads the model in the `lifespan` handler and re-raises on failure, so a
+  misconfigured container crash-loops instead of serving 500s while reporting healthy.
+- `routes.py` validates, calls the core, maps exceptions to status codes. Nothing else.
+- `logging.py` emits one JSON line per request. Prose logs are readable and unqueryable.
+
+### `hashing.py`
+
+Extracted from `build_manifest` because the inference path needed to fingerprint a
+checkpoint and was importing pandas — and the whole data stack — to do it.

@@ -13,7 +13,7 @@ from typing import Any
 
 import torch
 
-from sentinelinspect.data.build_manifest import sha256_file
+from sentinelinspect.hashing import sha256_file
 from sentinelinspect.models.base import CrackClassifier
 from sentinelinspect.models.factory import model_class_for
 

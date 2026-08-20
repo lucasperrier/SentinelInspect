@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
@@ -9,6 +8,8 @@ from pathlib import Path
 
 import pandas as pd
 from PIL import Image, UnidentifiedImageError
+
+from sentinelinspect.hashing import sha256_file
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 DEFAULT_SPLITS = ("train", "val", "test")
@@ -39,14 +40,6 @@ def iter_image_files(root: Path) -> Iterable[Path]:
     for path in root.rglob("*"):
         if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
             yield path
-
-
-def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(chunk_size), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def infer_split(parts: tuple[str, ...]) -> str | None:

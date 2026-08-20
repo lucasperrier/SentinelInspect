@@ -35,7 +35,7 @@ jobs:
         run: pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 
       - name: Install the package
-        run: pip install -e ".[dev,api,explain]"
+        run: pip install -e ".[dev,api,explain,train]"
 
       - name: Lint
         run: ruff check sentinelinspect tests
