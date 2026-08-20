@@ -69,13 +69,22 @@ jobs:
                       "pytorch-lightning_version": "2.0.0", "epoch": 0, "global_step": 0},
                      "ci-smoke.ckpt")
           PY
+          # Redirect the server's output to a file. A backgrounded process that
+          # inherits the step's stdout keeps that stream open and the step hangs
+          # even after the assertions pass.
           SENTINELINSPECT_CHECKPOINT=ci-smoke.ckpt \
-            uvicorn sentinelinspect.inference_service.app:app --port 8000 &
+            uvicorn sentinelinspect.inference_service.app:app --port 8000 \
+            > uvicorn.log 2>&1 &
+          UVICORN_PID=$!
+          trap 'kill $UVICORN_PID 2>/dev/null || true' EXIT
+
           for i in $(seq 1 30); do
-            curl -fsS http://localhost:8000/health && break
+            curl -fsS http://localhost:8000/health >/dev/null 2>&1 && break
             sleep 2
           done
+
           curl -fsS http://localhost:8000/health | tee /dev/stderr | grep -q '"status":"ok"'
+
           python -c "
           from PIL import Image
           import numpy as np
@@ -83,6 +92,8 @@ jobs:
           "
           curl -fsS -F "file=@ci-smoke.jpg;type=image/jpeg" http://localhost:8000/predict \
             | tee /dev/stderr | grep -q '"predicted_label"'
+
+          cat uvicorn.log
 
       - name: Publish the smoke checkpoint for the container job
         uses: actions/upload-artifact@v4
