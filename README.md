@@ -13,8 +13,45 @@ decision.
 The classifier is the least interesting part. The project exists to demonstrate the
 engineering around a model: a dataset that is a versioned, validated contract; one
 inference core shared by the CLI, offline evaluation and the HTTP API so they cannot
-disagree; tests aimed at failure modes; and a container that is reproducible from a
-clean clone.
+disagree; tests aimed at failure modes; and a container reproducible from a clean clone.
+
+### At a glance
+
+| | |
+| --- | --- |
+| **Test accuracy** | **0.9885** &nbsp;·&nbsp; F1 0.9886 &nbsp;·&nbsp; ROC AUC 0.9990 &nbsp;·&nbsp; recall (crack) 0.9899 |
+| **Triage** | 6.5% of images routed to review intercepts **79.4% of model errors**; accuracy on the auto-decided remainder rises to **0.9975** |
+| **Scale** | 38,402 unique images &nbsp;·&nbsp; 5,889-image held-out test split with zero train/test overlap |
+| **Tests** | 99, unit and integration, running in ~7s with no dataset required |
+| **Delivery** | Installable package · 6 CLI entry points · FastAPI service · CPU-only Docker image · GitHub Actions |
+
+> Measured on a leakage-free split. An earlier version of this repository reported 99.78% —
+> that figure came from a test set in which 8,482 images had also been in training, because
+> the data directory contained a byte-identical duplicate of itself and splits were keyed on
+> filename. Finding and fixing that is the story in
+> [`docs/INTERVIEW_NOTES.md`](docs/INTERVIEW_NOTES.md).
+
+### Try it in sixty seconds
+
+No dataset, no trained model, no GPU — the suite builds its own fixtures:
+
+```bash
+git clone https://github.com/lucasperrier/SentinelInspect.git && cd SentinelInspect
+python -m venv .venv && source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU wheels
+pip install -e ".[dev]"
+pytest                                                               # 99 passed
+```
+
+To see the service, with a checkpoint of your own:
+
+```bash
+pip install -e ".[api]"
+SENTINELINSPECT_CHECKPOINT=runs/<run>/<file>.ckpt \
+  uvicorn sentinelinspect.inference_service.app:app --port 8000
+
+curl -F "file=@image.jpg;type=image/jpeg" http://localhost:8000/predict
+```
 
 ---
 
@@ -249,12 +286,6 @@ With the band tuned on validation and applied unchanged to test:
 The band was tuned for 80% error recall on validation and delivered 79.4% on test, so it
 generalised rather than fitting the tuning split. Sending 6.5% of images to a human lifts
 accuracy on everything decided automatically from 98.85% to 99.75%.
-
-> **On the earlier 99.78%.** A previous version of this repository reported that figure. It
-> was measured on a test set where 8,482 images had also been in training, because the
-> dataset directory contained a byte-identical duplicate of itself under a second name and
-> splits were keyed on filename. The number above is lower and real. See
-> [`docs/INTERVIEW_NOTES.md`](docs/INTERVIEW_NOTES.md).
 
 **Honest caveats.** CCIC is a near-saturated benchmark — 227x227 centred crops, perfectly
 balanced. A frozen backbone was chosen because no GPU was available; a full fine-tune would
