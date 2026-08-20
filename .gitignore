@@ -39,3 +39,9 @@ mlruns/
 *.db
 # Claude Code local permissions (machine-specific)
 .claude/settings.local.json
+
+# build metadata
+*.egg-info/
+build/
+dist/
+*.whl

@@ -1,7 +1,0 @@
-[console_scripts]
-sentinelinspect-evaluate = sentinelinspect.evaluation.evaluate:main
-sentinelinspect-manifest = sentinelinspect.data.build_manifest:main
-sentinelinspect-predict = sentinelinspect.inference.predict:main
-sentinelinspect-split = sentinelinspect.data.splitters:main
-sentinelinspect-train = sentinelinspect.training.train:main
-sentinelinspect-validate = sentinelinspect.data.validate_dataset:main
