@@ -5,27 +5,12 @@ from typing import Any, Dict
 import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
+import numpy as np
 from PIL import Image
-from torchvision import transforms
 
 from src.config.load import to_runtime_config
-from src.models.resnet50 import ResNet50Module
-from src.models.vit import VisionTransformerModule
-
-
-def build_model(model_cfg: Dict[str, Any]) -> torch.nn.Module:
-    name = str(model_cfg.get("name", "resnet50")).lower()
-    if "vit" in name:
-        return VisionTransformerModule(model_cfg)
-    return ResNet50Module(model_cfg)
-
-
-def make_transform(image_size: int) -> transforms.Compose:
-    return transforms.Compose([
-        transforms.Resize((image_size, image_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+from src.models.factory import model_class_for
+from src.preprocessing.transforms import build_inference_transforms
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="inference")
@@ -36,8 +21,10 @@ def main(cfg: DictConfig) -> None:
     if not runtime.checkpoint_path:
         raise ValueError("checkpoint_path is required for inference")
 
-    model_cls = VisionTransformerModule if "vit" in runtime.model.name else ResNet50Module
-    model = model_cls.load_from_checkpoint(runtime.checkpoint_path, config=cfg_dict["model"])
+    model_cls = model_class_for(runtime.model.name)
+    model = model_cls.load_from_checkpoint(
+        runtime.checkpoint_path, config=runtime.model.model_dump()
+    )
     model.eval()
 
     device = torch.device("cuda" if torch.cuda.is_available() and runtime.device != "cpu" else "cpu")
@@ -49,9 +36,12 @@ def main(cfg: DictConfig) -> None:
     if image_path is None:
         raise ValueError("Please pass image_path=... as Hydra override")
 
-    tfm = make_transform(runtime.data.image_size)
+    # the SAME pipeline evaluation uses, so serving cannot drift from scoring
+    tfm = build_inference_transforms(
+        runtime.preprocessing.model_dump() if runtime.preprocessing else None
+    )
     image = Image.open(image_path).convert("RGB")
-    x = tfm(image).unsqueeze(0).to(device)
+    x = tfm(image=np.array(image))["image"].unsqueeze(0).to(device)
 
     with torch.no_grad():
         logits = model(x)

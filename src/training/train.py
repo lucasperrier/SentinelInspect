@@ -15,8 +15,7 @@ from pytorch_lightning.loggers import MLFlowLogger
 
 from src.config.load import to_runtime_config
 from src.data.datamodule import CrackDataModule
-from src.models.resnet50 import ResNet50Module
-from src.models.vit import VisionTransformerModule
+from src.models.factory import build_model
 
 
 def flatten_dict(cfg: Dict[str, Any], parent_key: str = "", sep: str = ".") -> Dict[str, Any]:
@@ -28,13 +27,6 @@ def flatten_dict(cfg: Dict[str, Any], parent_key: str = "", sep: str = ".") -> D
         else:
             items.append((new_key, v))
     return dict(items)
-
-
-def build_model(model_cfg: Dict[str, Any]) -> torch.nn.Module:
-    name = str(model_cfg.get("name", "resnet50")).lower()
-    if "vit" in name:
-        return VisionTransformerModule(model_cfg)
-    return ResNet50Module(model_cfg)
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="train")
@@ -75,7 +67,7 @@ def main(cfg: DictConfig) -> None:
         datamodule = CrackDataModule(
             batch_size=runtime.data.batch_size,
             num_workers=runtime.data.num_workers,
-            preprocessing={"image_size": runtime.data.image_size},
+            preprocessing=runtime.preprocessing.model_dump() if runtime.preprocessing else None,
             manifest_path=runtime.data.manifest_path,
             train_split_path=runtime.data.train_split_path,
             val_split_path=runtime.data.val_split_path,
@@ -85,7 +77,7 @@ def main(cfg: DictConfig) -> None:
             fail_on_validation_error=runtime.data.fail_on_validation_error,
         )
 
-        model = build_model(cfg_dict["model"])
+        model = build_model(runtime.model.model_dump())
 
         trainer = Trainer(
             max_epochs=runtime.trainer.max_epochs,

@@ -13,15 +13,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 
 from src.config.load import to_runtime_config
 from src.data.datamodule import CrackDataModule
-from src.models.resnet50 import ResNet50Module
-from src.models.vit import VisionTransformerModule
-
-
-def build_model(model_cfg: Dict[str, Any]) -> torch.nn.Module:
-    name = str(model_cfg.get("name", "resnet50")).lower()
-    if "vit" in name:
-        return VisionTransformerModule(model_cfg)
-    return ResNet50Module(model_cfg)
+from src.models.factory import model_class_for
 
 
 @torch.no_grad()
@@ -88,7 +80,7 @@ def main(cfg: DictConfig) -> None:
     datamodule = CrackDataModule(
             batch_size=runtime.data.batch_size,
             num_workers=runtime.data.num_workers,
-            preprocessing={"image_size": runtime.data.image_size},
+            preprocessing=runtime.preprocessing.model_dump() if runtime.preprocessing else None,
             manifest_path=runtime.data.manifest_path,
             train_split_path=runtime.data.train_split_path,
             val_split_path=runtime.data.val_split_path,
@@ -101,10 +93,15 @@ def main(cfg: DictConfig) -> None:
     datamodule.setup(stage="test")
     test_loader = datamodule.test_dataloader()
     
-    model = build_model(cfg_dict["model"])
-    if runtime.checkpoint_path:
-        model_cls = VisionTransformerModule if "vit" in runtime.model.name else ResNet50Module
-        model = model_cls.load_from_checkpoint(runtime.checkpoint_path, config=cfg_dict["model"])
+    if not runtime.checkpoint_path:
+        raise ValueError(
+            "checkpoint_path is required for evaluation. Without it this scored a "
+            "randomly initialised model and wrote the result out as a metric."
+        )
+    model_cls = model_class_for(runtime.model.name)
+    model = model_cls.load_from_checkpoint(
+        runtime.checkpoint_path, config=runtime.model.model_dump()
+    )
 
     trainer = Trainer(
         logger=False,

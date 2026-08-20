@@ -1,112 +1,29 @@
-import pytorch_lightning as pl
-import torch
-import torch.nn as nn
+from __future__ import annotations
+
 import timm
-from torchmetrics import Accuracy, F1Score, AUROC
-from typing import Any, Dict
+import torch.nn as nn
+
+from src.models.base import CrackClassifier
 
 
-class ResNet50Module(pl.LightningModule):
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__()
-        self.save_hyperparameters(config)
+class ResNet50Module(CrackClassifier):
+    """ResNet-50 backbone. Everything but the backbone lives in CrackClassifier."""
 
-        self.learning_rate = self.hparams.get('learning_rate', 1e-3)
-        self.weight_decay = self.hparams.get('weight_decay', 1e-4)
-        self.scheduler_name = self.hparams.get('scheduler')
-        self.optimizer_name = self.hparams.get('optimizer', 'adam').lower()
+    default_learning_rate = 1e-3
+    default_weight_decay = 1e-4
+    default_optimizer = "adam"
 
-        num_classes = self.hparams.get('num_classes', 2)
-        model_name = self.hparams.get('model', 'resnet50')
-        pretrained = self.hparams.get('pretrained', True)
-
-        self.model = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes)
-        if self.hparams.get('freeze_backbone', False):
-            self._freeze_backbone()
-
-        self.criterion = nn.CrossEntropyLoss()
-        metric_factory = lambda: nn.ModuleDict({
-            'acc': Accuracy(task='binary'),
-            'f1': F1Score(task='binary'),
-            'auc': AUROC(task='binary')
-        })
-        self.train_acc = Accuracy(task='binary')
-        self.train_f1 = F1Score(task='binary')
-        self.train_auc = AUROC(task='binary')
-
-        self.val_acc = Accuracy(task='binary')
-        self.val_f1 = F1Score(task='binary')
-        self.val_auc = AUROC(task='binary')
-
-        self.test_acc = Accuracy(task='binary')
-        self.test_f1 = F1Score(task='binary')
-        self.test_auc = AUROC(task='binary')
-
-    def forward(self, x):
-        return self.model(x)
-
-    def _shared_step(self, batch, stage: str):
-        x, y = batch
-        logits = self(x)
-        loss = self.criterion(logits, y)
-        preds = torch.argmax(logits, dim=1)
-        probs = torch.softmax(logits, dim=1)[:, 1]
-
-        # Access metrics directly by stage
-        if stage == 'train':
-            acc_metric = self.train_acc
-            f1_metric = self.train_f1
-            auc_metric = self.train_auc
-        elif stage == 'val':
-            acc_metric = self.val_acc
-            f1_metric = self.val_f1
-            auc_metric = self.val_auc
-        elif stage == 'test':
-            acc_metric = self.test_acc
-            f1_metric = self.test_f1
-            auc_metric = self.test_auc
-
-        acc_metric(preds, y)
-        f1_metric(preds, y)
-        auc_metric(probs, y)
-
-        self.log(f'{stage}_loss', loss, on_epoch=True, prog_bar=(stage != 'train'))
-        self.log(f'{stage}_acc', acc_metric, prog_bar=True)
-        self.log(f'{stage}_f1', f1_metric)
-        self.log(f'{stage}_auc', auc_metric)
-        return loss
-
-
-    def training_step(self, batch, batch_idx):
-        return self._shared_step(batch, 'train')
-
-    def validation_step(self, batch, batch_idx):
-        self._shared_step(batch, 'val')
-
-    def test_step(self, batch, batch_idx):
-        self._shared_step(batch, 'test')
-
-    def configure_optimizers(self):
-        params = filter(lambda p: p.requires_grad, self.parameters())
-        if self.optimizer_name == 'adamw':
-            optimizer = torch.optim.AdamW(params, lr=self.learning_rate, weight_decay=self.weight_decay)
-        elif self.optimizer_name == 'sgd':
-            optimizer = torch.optim.SGD(params, lr=self.learning_rate, momentum=0.9, weight_decay=self.weight_decay)
-        else:
-            optimizer = torch.optim.Adam(params, lr=self.learning_rate, weight_decay=self.weight_decay)
-
-        if self.scheduler_name == 'cosine':
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer,
-                T_max=self.hparams.get('epochs', 10)
-            )
-            return {'optimizer': optimizer, 'lr_scheduler': scheduler}
-        return optimizer
-
-    def _freeze_backbone(self):
-        for param in self.model.parameters():
-            param.requires_grad = False
-        classifier = self.model.get_classifier()
-        if isinstance(classifier, nn.Module):
-            for param in classifier.parameters():
-                param.requires_grad = True
+    def build_backbone(self) -> nn.Module:
+        model = timm.create_model(
+            self.hparams.get("model", "resnet50"),
+            pretrained=self.hparams.get("pretrained", True),
+            num_classes=self.hparams.get("num_classes", 2),
+        )
+        if self.hparams.get("freeze_backbone", False):
+            for param in model.parameters():
+                param.requires_grad = False
+            classifier = model.get_classifier()
+            if isinstance(classifier, nn.Module):
+                for param in classifier.parameters():
+                    param.requires_grad = True
+        return model
