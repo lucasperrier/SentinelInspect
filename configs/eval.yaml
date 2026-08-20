@@ -11,6 +11,8 @@ seed: 42
 run_name: "eval_${model.name}"
 checkpoint_path: null
 split: test
+# where the report bundle is written; defaults to reports/eval_<split>
+output_dir: null
 
 preprocessing:
   image_size: 224
