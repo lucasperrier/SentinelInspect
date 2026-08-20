@@ -219,6 +219,50 @@ the model's errors while flagging no more than a set fraction of traffic. Uncons
 
 ---
 
+## Results
+
+ResNet-50 with a **frozen backbone** (linear probe), 3 epochs on CPU, 28,054 training
+images. Evaluated once on a 5,889-image test split containing no image the model has seen.
+
+| Metric | Test | Validation |
+| --- | --- | --- |
+| Accuracy | **0.9885** | 0.9846 |
+| F1 | 0.9886 | 0.9844 |
+| ROC AUC | 0.9990 | 0.9987 |
+| Recall (crack) | 0.9899 | 0.9855 |
+| Loss | 0.0707 | 0.0741 |
+
+```
+confusion (test)   tn=2872   fp=38   fn=30   tp=2949
+```
+
+### What triage buys
+
+With the band tuned on validation and applied unchanged to test:
+
+| | |
+| --- | --- |
+| Routed to review | 383 of 5,889 — **6.5%** |
+| Model errors intercepted | 54 of 68 — **79.4%** |
+| Accuracy on the 5,506 auto-decided | **0.9975** |
+
+The band was tuned for 80% error recall on validation and delivered 79.4% on test, so it
+generalised rather than fitting the tuning split. Sending 6.5% of images to a human lifts
+accuracy on everything decided automatically from 98.85% to 99.75%.
+
+> **On the earlier 99.78%.** A previous version of this repository reported that figure. It
+> was measured on a test set where 8,482 images had also been in training, because the
+> dataset directory contained a byte-identical duplicate of itself under a second name and
+> splits were keyed on filename. The number above is lower and real. See
+> [`docs/INTERVIEW_NOTES.md`](docs/INTERVIEW_NOTES.md).
+
+**Honest caveats.** CCIC is a near-saturated benchmark — 227x227 centred crops, perfectly
+balanced. A frozen backbone was chosen because no GPU was available; a full fine-tune would
+score higher. The confidence is a softmax output, not a calibrated probability. Single
+dataset, so nothing here measures cross-dataset generalisation.
+
+---
+
 ## Testing
 
 ```bash

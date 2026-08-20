@@ -18,6 +18,30 @@ If they only ask one follow-up, it will be about the leakage bug. Lead with it.
 
 ---
 
+## The numbers, and what they mean
+
+```
+test accuracy 0.9885 · f1 0.9886 · auc 0.9990 · recall(crack) 0.9899   (5,889 images)
+triage: 6.5% routed to review, catching 79.4% of errors
+        auto-decided accuracy 0.9975 on the remaining 5,506
+```
+
+Frozen-backbone ResNet-50, 3 epochs, CPU. Say the caveats yourself: the dataset is easy,
+the backbone is frozen because there was no GPU, and the confidence is uncalibrated.
+
+**If asked why it dropped from 99.78%:** that figure came from a contaminated test set.
+This one is real. Two independent code paths agree on it — Lightning's own `trainer.test`
+and the `Predictor` used by the API both return 0.9885, which is incidental proof that
+offline evaluation and serving share one forward pass.
+
+**The triage number is the interesting one.** Routing 6.5% of images to a human intercepts
+79.4% of the model's mistakes and lifts accuracy on everything decided automatically to
+99.75%. The band was tuned on validation for 80% error recall and hit 79.4% on test, so it
+generalised. That is the argument for tuning under a review-capacity budget rather than
+picking round numbers: the guessed [0.35, 0.65] caught only 58%.
+
+---
+
 ## Architecture in one breath
 
 ```
