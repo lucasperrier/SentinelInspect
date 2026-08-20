@@ -28,10 +28,14 @@ Requires-Dist: torchmetrics>=1.0
 Provides-Extra: explain
 Requires-Dist: shap>=0.44; extra == "explain"
 Requires-Dist: scikit-image>=0.22; extra == "explain"
-Requires-Dist: opencv-python>=4.9; extra == "explain"
 Provides-Extra: dev
 Requires-Dist: pytest>=7.2; extra == "dev"
 Requires-Dist: ruff>=0.12; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"
+Provides-Extra: api
+Requires-Dist: fastapi>=0.110; extra == "api"
+Requires-Dist: uvicorn[standard]>=0.27; extra == "api"
+Requires-Dist: python-multipart>=0.0.9; extra == "api"
 
 # SentinelInspect
 
@@ -198,8 +202,19 @@ Full detail and success criteria in [`docs/roadmap.md`](docs/roadmap.md).
 > workflow and become fully reproducible once Phase 0 lands.
 
 ```bash
-# install
-pip install -r requirements.txt
+# install (editable, with the dev tools)
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+# CPU-only machine or container? install torch from the CPU index first,
+# otherwise pip pulls several GB of CUDA wheels you will never use:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# explainability extras (SHAP needs scikit-image; Grad-CAM works without it)
+#   pip install -e ".[dev,explain]"
+
+# run the tests
+pytest
 
 # 1. build the manifest from data/raw/
 python -m sentinelinspect.data.build_manifest

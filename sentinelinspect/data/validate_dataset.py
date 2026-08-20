@@ -10,7 +10,9 @@ import pandas as pd
 from PIL import Image, UnidentifiedImageError
 
 
-PATH_CANDIDATES = ("path", "image_path", "relative_path")
+# Ordered by preference. `relative_path` first: it is portable across machines
+# and directory names, where an absolute "path" column is neither.
+PATH_CANDIDATES = ("relative_path", "image_path", "path")
 CONTENT_COLUMN = "sha256"
 LABEL_COLUMN = "label"
 REQUIRED_BASE_COLUMNS = {LABEL_COLUMN}

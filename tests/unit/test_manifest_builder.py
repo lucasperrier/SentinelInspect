@@ -24,7 +24,6 @@ def test_build_manifest_basic(tmp_path: Path) -> None:
     assert len(df) == 2
 
     expected_cols = {
-        "path",
         "relative_path",
         "dataset",
         "split",

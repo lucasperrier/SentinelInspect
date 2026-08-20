@@ -14,7 +14,9 @@ from sentinelinspect.preprocessing.transforms import (
     build_eval_transforms,
 )
 
-PATH_CANDIDATES = ("path", "image_path", "relative_path")
+# Ordered by preference. `relative_path` first: it is portable across machines
+# and directory names, where an absolute "path" column is neither.
+PATH_CANDIDATES = ("relative_path", "image_path", "path")
 
 class CrackDataset(Dataset):
     def __init__(self, image_paths: List[str], labels: List[int], transform=None):

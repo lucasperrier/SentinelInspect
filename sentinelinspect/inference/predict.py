@@ -1,60 +1,47 @@
+"""Single-image prediction CLI.
+
+A thin adapter over `Predictor`: parse config, build the core, print the
+contract. Any logic that appears here rather than in the Predictor is logic the
+HTTP route will not share.
+
+    python -m sentinelinspect.inference.predict \
+        "checkpoint_path='runs/<exp>/<model>-epoch=00-val_loss=0.20.ckpt'" \
+        "image_path='data/raw/ccic/Positive/00001.jpg'"
+
+Quote the overrides: checkpoint filenames contain '=', which Hydra's override
+parser reads as a separator.
+"""
+
 from __future__ import annotations
 
-from typing import Any, Dict
+import json
+import sys
 
 import hydra
-import torch
-from omegaconf import DictConfig, OmegaConf
-import numpy as np
-from PIL import Image
+from omegaconf import DictConfig
 
 from sentinelinspect.config.load import to_runtime_config
-from sentinelinspect.models.factory import model_class_for
-from sentinelinspect.preprocessing.transforms import build_inference_transforms
+from sentinelinspect.inference.model_loader import CheckpointNotFoundError
+from sentinelinspect.inference.predictor import InvalidImageError, Predictor
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="inference")
 def main(cfg: DictConfig) -> None:
     runtime = to_runtime_config(cfg)
-    cfg_dict = OmegaConf.to_container(cfg, resolve=True)
 
-    if not runtime.checkpoint_path:
-        raise ValueError("checkpoint_path is required for inference")
+    if not runtime.image_path:
+        raise SystemExit("image_path is required, e.g. \"image_path='path/to/image.jpg'\"")
 
-    model_cls = model_class_for(runtime.model.name)
-    model = model_cls.load_from_checkpoint(
-        runtime.checkpoint_path, config=runtime.model.model_dump()
-    )
-    model.eval()
+    try:
+        predictor = Predictor.from_runtime_config(runtime)
+        prediction = predictor.predict_image(runtime.image_path)
+    except CheckpointNotFoundError as exc:
+        raise SystemExit(f"error: {exc}") from exc
+    except InvalidImageError as exc:
+        raise SystemExit(f"error: {exc}") from exc
 
-    device = torch.device("cuda" if torch.cuda.is_available() and runtime.device != "cpu" else "cpu")
-    model.to(device)
-
-    # Example single-image path; override with CLI:
-    # python -m sentinelinspect.inference.predict image_path=/abs/path/image.jpg checkpoint_path=/abs/path.ckpt
-    image_path = cfg.get("image_path", None)
-    if image_path is None:
-        raise ValueError("Please pass image_path=... as Hydra override")
-
-    # the SAME pipeline evaluation uses, so serving cannot drift from scoring
-    tfm = build_inference_transforms(
-        runtime.preprocessing.model_dump() if runtime.preprocessing else None
-    )
-    image = Image.open(image_path).convert("RGB")
-    x = tfm(image=np.array(image))["image"].unsqueeze(0).to(device)
-
-    with torch.no_grad():
-        logits = model(x)
-        probs = torch.softmax(logits, dim=1)[0]
-        pred = int(torch.argmax(probs).item())
-
-    print({
-        "image_path": image_path,
-        "predicted_class": pred,
-        "probabilities": probs.detach().cpu().tolist(),
-        "model": runtime.model.name,
-        "checkpoint_path": runtime.checkpoint_path,
-    })
+    json.dump(prediction.model_dump(mode="json"), sys.stdout, indent=2)
+    sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

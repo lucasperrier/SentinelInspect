@@ -3,6 +3,7 @@ defaults:
   - model: resnet50
   - trainer: default
   - mlflow: default
+  - review: default
   - _self_
 
 task: eval

@@ -66,6 +66,27 @@ class ServiceConfig(BaseModel):
     port: int = Field(default=8000, ge=1, le=65535)
 
 
+class ReviewConfig(BaseModel):
+    """Triage policy: the confidence band routed to a human.
+
+    Lives in config rather than in code because the right band depends on how
+    much manual review capacity exists, which is an operational decision, not a
+    modelling one. Defaults are tuned on the validation split -- see
+    `evaluation.metrics.tune_review_band`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    lower: float = Field(default=0.35, ge=0.0, le=1.0)
+    upper: float = Field(default=0.65, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_band(self) -> "ReviewConfig":
+        if self.lower > self.upper:
+            raise ValueError(f"review.lower ({self.lower}) must not exceed review.upper ({self.upper})")
+        return self
+
+
 class PreprocessingConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -88,8 +109,10 @@ class RuntimeConfig(BaseModel):
     trainer: Optional[TrainerConfig] = None
     service: Optional[ServiceConfig] = None
     preprocessing: Optional[PreprocessingConfig] = None
+    review: Optional[ReviewConfig] = None
 
     checkpoint_path: Optional[str] = None
+    output_dir: Optional[str] = None
     split: Optional[Literal["train", "val", "test"]] = None
     device: Optional[Literal["cpu", "gpu", "auto"]] = None
     image_path: Optional[str] = None

@@ -16,7 +16,15 @@ DEFAULT_SPLITS = ("train", "val", "test")
 
 @dataclass
 class ManifestRecord:
-    path: str
+    """One image, identified by where it sits *relative to the raw root* and by
+    what it contains.
+
+    There is deliberately no absolute path column. An absolute path makes the
+    manifest specific to one machine and one directory name: renaming the
+    project once invalidated all 40,000 rows. `relative_path` plus the
+    configured `raw_root` is portable, and `sha256` identifies the bytes.
+    """
+
     relative_path: str
     dataset: str
     split: str | None
@@ -94,7 +102,6 @@ def build_record(path: Path, raw_root: Path) -> ManifestRecord:
     sha256 = sha256_file(path)
 
     return ManifestRecord(
-        path=str(path.resolve()),
         relative_path=str(relative_path),
         dataset=dataset,
         split=split,
@@ -114,7 +121,6 @@ def build_manifest(raw_root: Path) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(
             columns=[
-                "path",
                 "relative_path",
                 "dataset",
                 "split",

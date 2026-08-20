@@ -26,10 +26,10 @@ sentinelinspect/explainability/run_explainability.py
 sentinelinspect/explainability/shap_utils.py
 sentinelinspect/explainability/utils.py
 sentinelinspect/inference/__init__.py
-sentinelinspect/inference/batch_predict.py
 sentinelinspect/inference/contracts.py
 sentinelinspect/inference/model_loader.py
 sentinelinspect/inference/predict.py
+sentinelinspect/inference/predictor.py
 sentinelinspect/inference_service/__init__.py
 sentinelinspect/inference_service/app.py
 sentinelinspect/inference_service/dependencies.py

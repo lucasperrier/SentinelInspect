@@ -6,7 +6,8 @@ manifest_path: data/processed/manifests/manifest.csv
 train_split_path: data/processed/splits/train.csv
 val_split_path: data/processed/splits/val.csv
 test_split_path: data/processed/splits/test.csv
-raw_root: .
+# relative_path in the manifest is relative to this root
+raw_root: data/raw
 
 validate_artifacts: true
 fail_on_validation_error: true

@@ -37,3 +37,5 @@ mlflow.db
 mlruns/
 
 *.db
+# Claude Code local permissions (machine-specific)
+.claude/settings.local.json
