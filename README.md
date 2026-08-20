@@ -283,7 +283,7 @@ fixed in advance. Six things that work beat twelve that half-work.
 ```
 configs/           Hydra config groups: data, model, trainer, mlflow, review, service
 docker/            Dockerfile.api
-docs/              architecture.md · roadmap.md · CODE_TOUR.md · INTERVIEW_NOTES.md
+docs/              architecture.md · CODE_TOUR.md · INTERVIEW_NOTES.md · roadmap.md
 sentinelinspect/
   config/          typed schema + loader (Pydantic over Hydra)
   data/            manifest · splitters · validation · datamodule

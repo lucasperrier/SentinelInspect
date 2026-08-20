@@ -1,182 +1,175 @@
 # Architecture
 
-## SentinelInspect — system design
-
-SentinelInspect is structured as a sequence of contracts rather than a single training
-script: a **data contract**, a **training/evaluation contract**, and an **inference
-contract**. Each stage consumes well-defined, persisted artifacts from the previous one,
-which is what makes runs reproducible and the system inspectable.
-
-This document describes the architecture as it is actually built, then the target shape of
-the surfaces that are still scaffolding. For sequencing, see [`roadmap.md`](roadmap.md).
+How SentinelInspect is put together, and why the boundaries sit where they do.
 
 ---
 
-## High-level flow
+## The shape of it
 
 ```mermaid
-flowchart TD
-    raw["data/raw/<br/>(sdnet2018, ccic, ...)"] --> manifest
-
+flowchart TB
     subgraph data["Data contract  (sentinelinspect/data)"]
-        manifest["build_manifest.py<br/>manifest.csv / .json<br/>+ SHA256, dims, label, split hint"]
-        splits["splitters.py<br/>deterministic stratified<br/>train/val/test/robustness.csv"]
-        validate["validate_dataset.py<br/>duplicates, corrupt files,<br/>split overlap"]
-        manifest --> splits --> validate
+        raw[("data/raw/**")] --> manifest["build_manifest.py<br/>relative_path · label · dims · sha256"]
+        manifest --> splits["splitters.py<br/>split = f(sha256, seed)"]
+        splits --> validate["validate_dataset.py<br/>path + content overlap · label conflicts"]
     end
 
-    validate --> dm["datamodule.py<br/>CrackDataModule (Lightning)"]
+    validate --> dm["datamodule.py<br/>CrackDataModule"]
+    dm --> tfm["preprocessing/transforms.py<br/>one pipeline, train and serve"]
 
-    subgraph train["Training  (sentinelinspect/training, sentinelinspect/models)"]
-        dm --> trainer["train.py<br/>Hydra + Lightning Trainer"]
-        trainer --> models["ResNet50Module / ViTModule<br/>(timm backbones)"]
-        trainer --> mlflow[("MLflow<br/>sqlite:///mlflow.db")]
-        trainer --> ckpt["runs/ checkpoints"]
+    subgraph train["Training  (training, models)"]
+        tfm --> trainer["train.py<br/>Hydra + Lightning"]
+        trainer --> models["CrackClassifier<br/>ResNet50Module · VisionTransformerModule"]
+        trainer --> mlflow[("MLflow")]
+        trainer --> ckpt["runs/*.ckpt"]
     end
 
-    subgraph eval["Evaluation  (sentinelinspect/evaluation)"]
-        ckpt --> evaluate["evaluate.py"]
-        dm --> evaluate
-        evaluate --> bundle["reports/ bundle<br/>metrics.json, confusion_matrix.npy,<br/>classification_report.txt, predictions.npz"]
+    subgraph core["Shared inference core  (inference)"]
+        ckpt --> loader["model_loader.py<br/>load once · fingerprint · checkpoint wins"]
+        loader --> pred["predictor.py<br/>_probabilities()"]
+        tfm --> pred
+        pred --> contract["contracts.py<br/>Prediction · ReviewPolicy"]
     end
 
-    subgraph infer["Inference  (sentinelinspect/inference, sentinelinspect/inference_service)"]
-        ckpt --> core["shared prediction core<br/>(planned, Phase 3)"]
-        core --> single["predict.py<br/>single image"]
-        core --> batch["batch_predict.py (planned)"]
-        core --> api["FastAPI service (planned)"]
-    end
-
-    single --> contract["output contract<br/>label, confidence,<br/>needs_review, metadata"]
-    batch --> contract
-    api --> contract
-    contract --> mon["monitoring/ (planned)<br/>structured prediction log"]
+    contract --> cli["predict.py (CLI)"]
+    contract --> eval["evaluate.py → reports bundle"]
+    contract --> api["FastAPI /predict · /health"]
 ```
 
 ---
 
-## Configuration system
+## Four boundaries, and what each one buys
 
-Configuration is layered and validated in two stages:
+### 1 · The dataset is a file, not a directory
 
-1. **Hydra** composes config groups under `configs/` (`data/`, `model/`, `trainer/`,
-   `mlflow/`, `service/`) into a single run config. Top-level entrypoints are
-   `configs/train.yaml`, `configs/eval.yaml`, and `configs/inference.yaml`. CLI overrides
-   (e.g. `checkpoint_path=... image_path=...`) work through Hydra.
-2. **Pydantic** (`sentinelinspect/config/schema.py`, applied via `sentinelinspect/config/load.py::to_runtime_config`)
-   validates the composed config into a typed `RuntimeConfig`. It enforces real invariants —
-   split ratios summing to less than 1.0, `trainer` being required for train/eval tasks, a
-   `split` being required for eval — so misconfiguration fails before any GPU work starts.
+Training never walks `data/raw/`. It reads `train.csv`. That CSV is an artifact you can
+commit, diff, hash and hand to someone else, so "what was this model trained on?" has an
+exact answer. Dropping new images into `data/raw/` changes nothing until you deliberately
+rebuild the manifest.
 
-This Hydra-composes / Pydantic-validates split is a deliberate design choice: flexible
-composition at the edge, strict typing at the core.
+The manifest records `relative_path` and `sha256` and **no absolute path**. An absolute
+path makes the contract specific to one machine and one directory name — renaming the
+project once invalidated all 40,000 rows.
 
----
+### 2 · Splits are a pure function of content
 
-## Module responsibilities
-
-| Module | Responsibility | State |
-| --- | --- | --- |
-| `sentinelinspect/data/build_manifest.py` | Walk `data/raw/`, record path, relative path, dataset, split hint, label, dimensions, channels, file size, SHA256 into a manifest | Implemented |
-| `sentinelinspect/data/splitters.py` | Deterministic, optionally stratified train/val/test/robustness splits via stable SHA256 hashing of the relative path | Implemented |
-| `sentinelinspect/data/validate_dataset.py` | Integrity checks: duplicates, missing/unreadable/corrupt images, required columns, cross-split leakage | Implemented |
-| `sentinelinspect/data/datamodule.py` | `CrackDataModule` (Lightning) loads persisted split CSVs, optionally re-validates, builds `CrackDataset` + dataloaders | Implemented |
-| `sentinelinspect/preprocessing/transforms.py` | Albumentations train/val/eval/inference pipelines (resize, flip, brightness/contrast, shift-scale-rotate, normalize, tensor) | Implemented |
-| `sentinelinspect/models/resnet50.py` | `ResNet50Module` — timm backbone, CE loss, torchmetrics, optimizer/scheduler, backbone freezing | Implemented |
-| `sentinelinspect/models/vit.py` | `VisionTransformerModule` — ViT backbone, dropout / drop-path / label smoothing, head-only or first-N-block freezing | Implemented |
-| `sentinelinspect/training/train.py` | Hydra entrypoint: build model, train, checkpoint on `val_loss`, log params/metrics/artifacts to MLflow | Implemented* |
-| `sentinelinspect/evaluation/evaluate.py` | Run test inference, compute metrics, write the `reports/` bundle | Implemented* |
-| `sentinelinspect/evaluation/robustness.py` | Standalone IoU localization and faithfulness-drop helpers | Implemented, not yet wired |
-| `sentinelinspect/explainability/` | Grad-CAM and SHAP attribution utilities and a runner | Implemented |
-| `sentinelinspect/inference/predict.py` | Single-image checkpoint inference | Implemented |
-| `sentinelinspect/config/` | Hydra-to-Pydantic typed config loading and validation | Implemented |
-| `sentinelinspect/inference/batch_predict.py`, `contracts.py`, `model_loader.py` | Batch inference + shared prediction core | Empty (Phase 3) |
-| `sentinelinspect/inference_service/` | FastAPI app, routes, schemas, dependencies, logging | Empty (Phase 3) |
-| `sentinelinspect/evaluation/metrics.py`, `reports.py` | Extracted reusable metric/report helpers | Empty (Phase 2) |
-| `sentinelinspect/monitoring/` | Prediction logging, drift, reporting | Empty (Phase 5) |
-| `sentinelinspect/mlops/`, `sentinelinspect/jobs/`, `sentinelinspect/utils/` | Registry/promotion, offline jobs, shared helpers | Empty (deferred / as needed) |
-
-`*` Implemented but not green end-to-end — see "Known integration seams" below.
-
----
-
-## Key design decisions
-
-**Persisted artifacts as the source of truth.** The manifest and split CSVs are the dataset
-contract. Training and evaluation consume the same saved splits, so an experiment's data
-membership is fully reconstructable from version-controlled files rather than from a runtime
-folder scan.
-
-**Deterministic hash-based splitting.** `splitters.py` maps each sample's relative path
-through `SHA256(seed::path)` into the unit interval and thresholds it into a split. The same
-path and seed always land in the same split, independent of dataset ordering or size — more
-robust than a shuffled `train_test_split`, and it supports stratification by label.
-
-**Lightning + timm + MLflow.** Lightning standardizes the train/val/test loop and metric
-logging; timm supplies interchangeable ResNet-50 and ViT backbones behind one model interface;
-MLflow (backed by `sqlite:///mlflow.db`) tracks params, metrics, and checkpoint artifacts.
-
-**Albumentations for preprocessing.** Augmentation and normalization live in one place
-(`transforms.py`) so train, eval, and inference can share identical image handling. (Closing
-the `predict.py` torchvision exception is part of Phase 3.)
-
-**Evaluation as a release artifact.** `evaluate.py` writes a fixed bundle —
-`metrics.json`, `classification_report.txt`, `confusion_matrix.npy`, `predictions.npz` — so a
-model is judged by reproducible artifacts, not console output. Phase 2 makes this bundle
-confidence-aware.
-
----
-
-## Output contract
-
-Every prediction, regardless of entrypoint (single, batch, API), targets one shape:
-
-| Field | Meaning | State |
-| --- | --- | --- |
-| `predicted_label` | `crack` / `no_crack` | Implemented |
-| `confidence_score` | positive-class softmax probability | Available in the inference path |
-| `needs_review` | low-confidence flag for manual triage | Target capability (Phase 2) |
-| `model_metadata` | model name, checkpoint, version/provenance | Expanded with the service layer (Phase 3) |
-
----
-
-## Known integration seams
-
-These are the concrete gaps between the modules as written today:
-
-1. **Datamodule call signature.** `train.py` and `evaluate.py` instantiate `CrackDataModule`
-   with the pre-refactor arguments (`val_split`, `test_split`, `robustness_split` floats). The
-   datamodule now expects `*_split_path` arguments. This blocks the training path until fixed
-   (Phase 0).
-2. **Label encoding.** `build_manifest.py` emits string labels (`crack` / `non_crack`) while
-   the datamodule casts labels with `int(...)` and asserts `0` / `1`. A single explicit
-   string-to-integer mapping needs an owner (Phase 0).
-3. **Train/serve preprocessing skew.** `predict.py` builds a `torchvision` transform; the rest
-   of the system uses `albumentations`. The shared prediction core removes this divergence
-   (Phase 3).
-4. **Robustness helpers are standalone.** `robustness.py` is implemented but not invoked by
-   `evaluate.py`; wiring it in is optional Phase 2 work.
-
----
-
-## Target inference architecture (Phase 3)
-
-The end-state collapses three entrypoints onto one core so they cannot drift:
-
-```mermaid
-flowchart LR
-    img["image(s)"] --> core
-    ckpt["checkpoint + config"] --> core
-    core["shared prediction core<br/>load model · preprocess · forward · softmax · triage"]
-    core --> cli["CLI<br/>predict.py"]
-    core --> batch["batch_predict.py"]
-    core --> route["FastAPI route"]
-    cli --> out["output contract"]
-    batch --> out
-    route --> out
-    out --> log["monitoring log<br/>(Phase 5)"]
+```python
+def assign_split(key, train_ratio, val_ratio, seed=42):
+    score = stable_hash_to_unit_interval(key, seed=seed)
+    ...
 ```
 
-The core owns model loading, preprocessing, the forward pass, confidence extraction, and the
-`needs_review` rule. CLI, batch, and API become thin adapters, which is what guarantees the
-"numerically consistent on the same image" success criterion in the roadmap.
+Keyed on `sha256`, so byte-identical images always co-locate and duplicates cannot
+straddle the train/test boundary. And because the score depends only on the item, adding
+images never moves the ones already assigned.
+
+**The trade-off this accepts:** class balance is approximate rather than exact — measured
+drift is under one percentage point. Exact stratification would require ranking within
+each class, which makes an item's split depend on every other item and destroys the
+stability property. The two are mutually exclusive.
+
+### 3 · Validation reports at two severities
+
+`validate_dataset.validate` returns a `ValidationReport` carrying `errors` and `warnings`,
+and raises nothing. The caller decides policy: the datamodule fails on errors, the CLI
+exits non-zero, both print warnings.
+
+| Condition | Severity | Why |
+| --- | --- | --- |
+| Same image in two splits (by content) | **error** | Invalidates every metric |
+| Same image, two different labels | **error** | Contradictory training data |
+| Duplicate rows or paths within a file | **error** | A build bug |
+| Duplicate *content* within one split | warning | Over-weights an image; does not invalidate |
+| Missing / corrupt / unreadable files | **error** | The data is not what the manifest claims |
+| No `sha256` column at all | warning | Content checks silently cannot run |
+
+The overlap check is one function called twice — once over paths, once over content —
+rather than two near-identical loops.
+
+### 4 · One inference core, three adapters
+
+```python
+@torch.inference_mode()
+def _probabilities(self, batch: torch.Tensor) -> torch.Tensor:
+    logits = self.model(batch.to(self.device))
+    return torch.softmax(logits, dim=1).cpu()
+```
+
+`predict_image`, `predict_images` and `predict_tensor` all go through it. The CLI, the
+HTTP route and offline evaluation are thin translation layers.
+
+This is not aesthetic. The project previously built a torchvision transform in `predict.py`
+while everything else used albumentations; the measured divergence was 0.035 max tensor
+delta. Small, uncontrolled, and structurally guaranteed to grow. A test now asserts that a
+prediction from raw bytes and one from a preprocessed tensor agree.
+
+---
+
+## Configuration
+
+Hydra composes `configs/*.yaml` into one tree; Pydantic validates it into a
+`RuntimeConfig` before any of it is used.
+
+| Group | Contents |
+| --- | --- |
+| `data` | manifest and split paths, `raw_root`, batch size, workers |
+| `model` | registry key, timm backbone, optimiser, learning rate |
+| `trainer` | epochs, accelerator, precision, determinism |
+| `mlflow` | tracking URI, experiment name |
+| `review` | the `needs_review` confidence band |
+| `service` | host and port |
+
+`extra="forbid"` on most schemas turns a typo into an error rather than a silently ignored
+key. `extra="allow"` on `ModelConfig` because ViT carries knobs ResNet does not.
+
+`config.paths.config_dir()` resolves the directory absolutely, because `hydra.main`'s
+relative `config_path` stops working through an installed console script.
+
+---
+
+## The prediction contract
+
+```json
+{
+  "predicted_label": "crack",
+  "confidence_score": 0.9731,
+  "probabilities": {"no_crack": 0.0269, "crack": 0.9731},
+  "needs_review": false,
+  "review_reason": null,
+  "model_metadata": {"name": "...", "checkpoint_sha256": "...", "package_version": "..."},
+  "latency_ms": 41.2
+}
+```
+
+Defined once, in `inference/contracts.py`, as Pydantic models. The service re-exports them
+rather than redefining them — a parallel definition would drift the first time a field was
+added to one side.
+
+`needs_review` is a two-sided band, not a floor: `p=0.48` and `p=0.52` are equally
+uncertain. `model_metadata` exists so a stored prediction can be traced to the weights that
+produced it; a filename cannot do that, since two runs happily produce the same one.
+
+---
+
+## Deployment
+
+The API loads the model in FastAPI's `lifespan` handler and re-raises on failure, so a
+misconfigured container crash-loops instead of reporting healthy and failing every request.
+`/health` returns the checkpoint fingerprint.
+
+The image is multi-stage, runs as an unprivileged user, installs CPU-only torch, and mounts
+weights at run time rather than baking them in. MLflow is not a core dependency, which
+keeps Flask, SQLAlchemy, alembic, gunicorn and the Docker SDK out of a serving image.
+
+**Known limitation, stated rather than hidden:** `configs/` lives beside the package rather
+than inside it, so a non-editable wheel install does not carry it. Editable installs work,
+and the container copies configs in and sets `SENTINELINSPECT_CONFIG_DIR`.
+
+---
+
+## Deliberately absent
+
+Batch-inference CLI, drift monitoring, a model registry, prediction persistence,
+authentication, queues, Kubernetes, ONNX export, further hyperparameter search. Scope was
+fixed at one week with a cut list agreed in advance. See `docs/roadmap.md` for what was
+planned and what was actually delivered.
