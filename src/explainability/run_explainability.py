@@ -1,4 +1,5 @@
 import argparse
+import re
 from pathlib import Path
 from typing import Any, Dict, Tuple, Optional
 
@@ -7,8 +8,7 @@ import torch
 import yaml
 
 from src.data.datamodule import CrackDataModule
-from src.models.resnet50 import ResNet50Module
-from src.models.vit import VisionTransformerModule
+from src.models.factory import build_model, model_class_for
 
 from src.explainability.grad_cam import GradCAM, upsample_cam_to_image
 from src.explainability.shap_utils import (
@@ -31,22 +31,12 @@ def load_config(path: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def build_model(cfg: Dict[str, Any]):
-    model_name = str(cfg.get("model", "resnet50")).lower()
-    if "vit" in model_name:
-        return VisionTransformerModule(cfg)
-    return ResNet50Module(cfg)
-
-
 def load_from_checkpoint_if_any(cfg: Dict[str, Any], model):
     ckpt_path = cfg.get("checkpoint_path", None)
     if not ckpt_path:
         return model
-
-    ckpt_path = str(ckpt_path)
-    model_name = str(cfg.get("model", "")).lower()
-    model_cls = VisionTransformerModule if "vit" in model_name else ResNet50Module
-    return model_cls.load_from_checkpoint(ckpt_path, config=cfg)
+    model_cls = model_class_for(cfg.get("name", ""))
+    return model_cls.load_from_checkpoint(str(ckpt_path), config=cfg)
 
 
 def pick_gradcam_target_layer(model_name: str, timm_model: torch.nn.Module) -> torch.nn.Module:
@@ -71,12 +61,23 @@ def pick_gradcam_target_layer(model_name: str, timm_model: torch.nn.Module) -> t
 
 
 def vit_grid_from_name(model_name: str) -> Tuple[int, int]:
+    """Patch-grid size for a timm ViT name, e.g. vit_base_patch16_224 -> (14, 14).
+
+    Previously this ignored its argument and returned (14, 14), which is right
+    only for patch16 at 224. Any other variant reshaped the token sequence into
+    the wrong grid and produced a silently meaningless heatmap.
     """
-    For vit_base_patch16_224 => 224/16 = 14.
-    If you change model/resolution, update this.
-    """
-    # minimal, aligned with your configs
-    return (14, 14)
+    match = re.search(r"patch(\d+)_(\d+)", model_name)
+    if match is None:
+        raise ValueError(
+            f"Cannot infer a patch grid from {model_name!r}. "
+            "Expected a timm name like 'vit_base_patch16_224'."
+        )
+    patch, image_size = int(match.group(1)), int(match.group(2))
+    if patch <= 0 or image_size % patch != 0:
+        raise ValueError(f"Image size {image_size} is not divisible by patch size {patch}.")
+    side = image_size // patch
+    return (side, side)
 
 
 def main(config_path: str):
@@ -108,9 +109,12 @@ def main(config_path: str):
     datamodule = CrackDataModule(
         batch_size=int(cfg.get("batch_size", 32)),
         num_workers=int(cfg.get("num_workers", 4)),
-        val_split=float(cfg.get("val_split", 0.1)),
-        test_split=float(cfg.get("test_split", 0.1)),
-        robustness_split=float(cfg.get("robustness_split", 0.1)),
+        preprocessing=cfg.get("preprocessing"),
+        manifest_path=cfg.get("manifest_path", "data/processed/manifests/manifest.csv"),
+        train_split_path=cfg.get("train_split_path", "data/processed/splits/train.csv"),
+        val_split_path=cfg.get("val_split_path", "data/processed/splits/val.csv"),
+        test_split_path=cfg.get("test_split_path", "data/processed/splits/test.csv"),
+        raw_root=cfg.get("raw_root", "."),
     )
 
     print("[INFO] Setting up datamodule (stage=test)...")
@@ -122,6 +126,7 @@ def main(config_path: str):
     print("[INFO] Building model...")
     model = build_model(cfg)
     model = load_from_checkpoint_if_any(cfg, model)
+    
     model.eval().to(device)
 
     timm_model = model.model  # your LightningModules store timm model here

@@ -67,6 +67,26 @@ def make_predict_fn_from_torch(
     return predict
 
 
+def _unpack_kernel_shap(shap_vals, expected_value, n_features: int):
+    """Normalise KernelExplainer output across SHAP versions.
+
+    shap < 0.45 returned (1, k) for a single-output model, or a list of arrays
+    for multi-output. Newer versions return (1, k, n_outputs) even when there
+    is one output, so the per-feature entry became a 1-element array. NumPy 2
+    no longer converts those to scalars implicitly, which surfaced as
+    "only 0-dimensional arrays can be converted to Python scalars".
+    """
+    if isinstance(shap_vals, list):
+        shap_vals = shap_vals[0]
+
+    values = np.asarray(shap_vals, dtype=np.float64)
+    values = values.reshape(-1) if values.size == n_features else values.reshape(n_features, -1)[:, 0]
+
+    base = np.asarray(expected_value, dtype=np.float64).reshape(-1)
+    base_val = float(base[0]) if base.size else 0.0
+    return values.astype(np.float32), base_val
+
+
 def shap_explain_superpixels(
     predict_fn: Callable[[np.ndarray], np.ndarray],
     images_uint8: np.ndarray,
@@ -175,12 +195,7 @@ def shap_explain_resnet_superpixels_kernel(
     ke = shap.KernelExplainer(f, bg)
 
     shap_vals = ke.shap_values(np.ones((1, k), dtype=np.float32), nsamples=nsamples)
-    if isinstance(shap_vals, list):
-        vals = shap_vals[0][0]
-        base_val = ke.expected_value[0] if isinstance(ke.expected_value, (list, np.ndarray)) else ke.expected_value
-    else:
-        vals = shap_vals[0]
-        base_val = ke.expected_value
+    vals, base_val = _unpack_kernel_shap(shap_vals, ke.expected_value, k)
 
     # Convert superpixel attributions -> per-pixel heatmap
     map_hw = np.zeros((H, W), dtype=np.float32)
@@ -269,15 +284,7 @@ def shap_explain_vit_patches_kernel(
     # explain the "all-ones" mask (original image) in mask space
     shap_vals = ke.shap_values(np.ones((1, M), dtype=np.float32), nsamples=nsamples)
 
-    # For single-output regression-style explanation, SHAP returns either:
-    # - array shape (1, M)   (most common)
-    # - or list with one array
-    if isinstance(shap_vals, list):
-        vals_m = np.asarray(shap_vals[0])[0]
-        base_val = ke.expected_value[0] if isinstance(ke.expected_value, (list, np.ndarray)) else ke.expected_value
-    else:
-        vals_m = np.asarray(shap_vals)[0]
-        base_val = ke.expected_value[0] if isinstance(ke.expected_value, (list, np.ndarray)) else ke.expected_value
+    vals_m, base_val = _unpack_kernel_shap(shap_vals, ke.expected_value, M)
 
     if vals_m.size != M:
         raise ValueError(f"Expected {M} patch attributions, got {vals_m.size}.")

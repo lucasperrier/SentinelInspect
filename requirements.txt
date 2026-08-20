@@ -9,6 +9,7 @@ streamlit>=1.20.0
 wandb>=0.15.0
 opencv-python>=4.7.0
 scikit-learn>=1.2.0
+scikit-image>=0.22.0   # slic superpixels, required by explainability SHAP
 matplotlib>=3.7.0
 seaborn>=0.12.0
 pillow>=9.5.0

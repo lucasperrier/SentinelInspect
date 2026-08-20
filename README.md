@@ -69,9 +69,10 @@ The following components contain real, functioning implementation:
 | Typed config validation (Hydra + Pydantic) | `src/config/schema.py`, `src/config/load.py` | Implemented |
 | Data-layer unit tests | `tests/`, `tests/unit/` | Implemented |
 
-`*` The training and evaluation entrypoints are written but the end-to-end run is not yet
-green after the recent data-layer refactor. Closing that gap is **Phase 0** of the roadmap
-and is the single most important next step.
+`*` Training, evaluation, single-image inference and the explainability run have each been
+executed end to end and produce their artifacts. Reported accuracy numbers from before
+August 2026 are not trustworthy: they were measured on splits contaminated by a duplicated
+dataset, which is described in `docs/CODE_TOUR.md`.
 
 This is already well beyond a notebook-only project.
 
@@ -83,16 +84,14 @@ These paths exist as empty placeholder files. They are planned system surfaces, 
 completed features:
 
 - **Inference service** — `src/inference_service/` (`app.py`, `routes.py`, `schemas.py`, `dependencies.py`, `logging.py`)
-- **Batch + shared inference** — `src/inference/batch_predict.py`, `contracts.py`, `model_loader.py`
+- **Shared inference core** — `src/inference/contracts.py`, `model_loader.py`, `batch_predict.py`
 - **Evaluation helpers** — `src/evaluation/metrics.py`, `reports.py`
-- **Monitoring** — `src/monitoring/` (`prediction_logger.py`, `drift.py`, `reporting.py`)
-- **MLOps** — `src/mlops/` (`artifact_store.py`, `promote_model.py`, `registry.py`, `tracking.py`)
-- **Offline jobs** — `src/jobs/`
-- **Shared utilities** — `src/utils/`
-- **Delivery** — `docker/Dockerfile.api`, `docker/Dockerfile.train`, `.github/workflows/ci.yaml`, `pyproject.toml`
+- **Delivery** — `docker/Dockerfile.api`, `.github/workflows/ci.yaml`, `pyproject.toml`
 
-Empty files are kept only where imminently planned. Anything not on the active roadmap
-should be removed rather than left hollow.
+Thirteen empty files remain, each owned by a specific phase below. The speculative
+directories that previously sat here empty — `src/mlops/`, `src/monitoring/`, `src/jobs/`,
+`src/utils/`, `scripts/` and `configs/old/` — have been deleted. An empty file is a promise
+the repository does not keep.
 
 ---
 
@@ -118,20 +117,18 @@ layer in Phase 3.
 ├── configs/            # Hydra config groups: data, model, trainer, mlflow, service
 ├── data/
 │   └── processed/      # manifests/ and splits/ — the dataset contract
-├── docker/             # train/api images (to be implemented)
-├── docs/               # architecture.md, roadmap.md
+├── docker/             # Dockerfile.api (to be implemented)
+├── docs/               # architecture.md, roadmap.md, CODE_TOUR.md
 ├── reports/            # evaluation bundles
 ├── runs/               # training checkpoints / MLflow run artifacts
-├── scripts/            # CLI wrappers (to be implemented)
 ├── src/
 │   ├── config/         # typed config schema + loader
 │   ├── data/           # manifest, splitters, validation, datamodule
 │   ├── evaluation/     # evaluate.py (+ metrics/reports, planned)
 │   ├── explainability/ # Grad-CAM, SHAP
-│   ├── inference/      # predict.py (+ batch/shared core, planned)
+│   ├── inference/      # predict.py (+ shared core, planned)
 │   ├── inference_service/  # FastAPI service (planned)
-│   ├── models/         # resnet50, vit
-│   ├── monitoring/     # prediction logging, drift (planned)
+│   ├── models/         # base, resnet50, vit, factory
 │   ├── preprocessing/  # transforms
 │   └── training/       # train.py
 ├── tests/
@@ -189,6 +186,12 @@ python -m src.training.train
 python -m src.evaluation.evaluate checkpoint_path=/path/to/model.ckpt
 
 # 6. single-image inference
+#    quote the overrides: checkpoint filenames contain "=", which Hydra's
+#    override parser would otherwise read as a separator
 python -m src.inference.predict \
-  checkpoint_path=/path/to/model.ckpt image_path=/path/to/image.jpg
+  "checkpoint_path='runs/<experiment>/<model>-epoch=00-val_loss=0.20.ckpt'" \
+  "image_path='data/raw/ccic/Positive/00001.jpg'"
+
+# 7. Grad-CAM and SHAP explanations for a checkpoint
+python -m src.explainability.run_explainability --config configs/explainability/resnet50.yaml
 ```

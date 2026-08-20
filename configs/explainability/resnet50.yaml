@@ -1,7 +1,8 @@
 seed: 42
 deterministic: true
 
-# Model to instantiate via timm
+# `name` selects the class from the model registry, `model` the timm backbone
+name: resnet50
 model: resnet50
 num_classes: 2
 pretrained: true
@@ -9,15 +10,16 @@ pretrained: true
 # Data module params
 batch_size: 1
 num_workers: 4
-val_split: 0.1
-test_split: 0.1
-robustness_split: 0.1
+# split artifacts are the dataset contract; see docs/architecture.md
+manifest_path: data/processed/manifests/manifest.csv
+test_split_path: data/processed/splits/test.csv
 
 # IMPORTANT: don't load a finetuned checkpoint
-checkpoint_path: 1/b91702df9a7045dcba7f5b42444b4ee3/checkpoints/resnet50-epoch=03-val_loss=0.6399.ckpt
+# set this to a checkpoint from `python -m src.training.train`
+checkpoint_path: null
 
 # Output
-output_dir: reports/eval_trained_resnet
+output_dir: reports/explainability_resnet50
 save_predictions: true
 save_confusion_matrix: true
 
@@ -25,7 +27,7 @@ save_confusion_matrix: true
 use_mlflow: false
 tracking_uri: file:./mlruns
 experiment_name: crack_detection
-run_name: eval_pretrained_resnet
+run_name: explain_resnet50
 
 # Explainability output
 n_explain_images: 4
