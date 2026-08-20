@@ -11,8 +11,7 @@ directly and generate the OpenAPI schema from the same definition the CLI uses.
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import Dict, List, Optional
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,7 +21,7 @@ CLASS_NAMES: tuple[str, str] = ("no_crack", "crack")
 POSITIVE_INDEX = 1
 
 
-class ReviewReason(str, Enum):
+class ReviewReason(StrEnum):
     """Why a prediction was routed to a human.
 
     A bare boolean would tell an operator that review is needed but not what
@@ -53,7 +52,7 @@ class ReviewPolicy(BaseModel):
         if self.lower > self.upper:
             raise ValueError(f"lower ({self.lower}) must not exceed upper ({self.upper})")
 
-    def evaluate(self, positive_probability: float) -> tuple[bool, Optional[ReviewReason]]:
+    def evaluate(self, positive_probability: float) -> tuple[bool, ReviewReason | None]:
         if self.lower <= positive_probability <= self.upper:
             return True, ReviewReason.LOW_CONFIDENCE
         return False, None
@@ -77,7 +76,7 @@ class ModelMetadata(BaseModel):
     checkpoint_path: str
     checkpoint_sha256: str = Field(description="First 16 hex characters of the checkpoint digest")
     package_version: str
-    class_names: List[str]
+    class_names: list[str]
 
 
 class Prediction(BaseModel):
@@ -88,9 +87,9 @@ class Prediction(BaseModel):
     predicted_label: str
     predicted_index: int
     confidence_score: float = Field(ge=0.0, le=1.0, description="Probability of the predicted class")
-    probabilities: Dict[str, float]
+    probabilities: dict[str, float]
     needs_review: bool
-    review_reason: Optional[ReviewReason] = None
+    review_reason: ReviewReason | None = None
     model_metadata: ModelMetadata
     latency_ms: float = Field(ge=0.0)
 
@@ -100,7 +99,7 @@ class BatchPrediction(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    predictions: List[Prediction]
+    predictions: list[Prediction]
 
     @property
     def review_count(self) -> int:

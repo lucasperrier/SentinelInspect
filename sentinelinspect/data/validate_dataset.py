@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 from PIL import Image, UnidentifiedImageError
-
 
 # Ordered by preference. `relative_path` first: it is portable across machines
 # and directory names, where an absolute "path" column is neither.

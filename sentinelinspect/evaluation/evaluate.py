@@ -11,11 +11,9 @@ served decision cannot disagree.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
 
 import hydra
 import numpy as np
-import torch
 from omegaconf import DictConfig
 from pytorch_lightning import seed_everything
 from torch.utils.data import DataLoader, Dataset
@@ -54,19 +52,19 @@ def score_split(
     dataset: Dataset,
     batch_size: int,
     num_workers: int,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
     """One pass over the data. Shuffle is off so rows stay aligned with the
     dataset's path list, which the bundle records alongside the predictions."""
     loader = DataLoader(
         dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=False
     )
 
-    y_true: List[np.ndarray] = []
-    y_pred: List[int] = []
-    y_prob: List[float] = []
-    review: List[bool] = []
-    batch_losses: List[float] = []
-    batch_sizes: List[int] = []
+    y_true: list[np.ndarray] = []
+    y_pred: list[int] = []
+    y_prob: list[float] = []
+    review: list[bool] = []
+    batch_losses: list[float] = []
+    batch_sizes: list[int] = []
 
     for images, labels in loader:
         predictions = predictor.predict_tensor(images)

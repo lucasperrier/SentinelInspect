@@ -1,37 +1,34 @@
 import argparse
 import re
 from pathlib import Path
-from typing import Any, Dict, Tuple, Optional
+from typing import Any
 
 import numpy as np
 import torch
 import yaml
 
 from sentinelinspect.data.datamodule import CrackDataModule
-from sentinelinspect.models.factory import build_model, model_class_for
-
 from sentinelinspect.explainability.grad_cam import GradCAM, upsample_cam_to_image
 from sentinelinspect.explainability.shap_utils import (
-    make_predict_fn_from_torch,
     shap_explain_resnet_superpixels_kernel,
-    shap_explain_superpixels,
     shap_explain_vit_patches_kernel,
 )
 from sentinelinspect.explainability.utils import (
-    denormalize_imagenet,
-    to_uint8_hwc,
     colorize_heatmap,
+    denormalize_imagenet,
     overlay_heatmap_on_image,
     save_png,
+    to_uint8_hwc,
 )
+from sentinelinspect.models.factory import build_model, model_class_for
 
 
-def load_config(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
+def load_config(path: str) -> dict[str, Any]:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-def load_from_checkpoint_if_any(cfg: Dict[str, Any], model):
+def load_from_checkpoint_if_any(cfg: dict[str, Any], model):
     ckpt_path = cfg.get("checkpoint_path", None)
     if not ckpt_path:
         return model
@@ -60,7 +57,7 @@ def pick_gradcam_target_layer(model_name: str, timm_model: torch.nn.Module) -> t
     return children[-1]
 
 
-def vit_grid_from_name(model_name: str) -> Tuple[int, int]:
+def vit_grid_from_name(model_name: str) -> tuple[int, int]:
     """Patch-grid size for a timm ViT name, e.g. vit_base_patch16_224 -> (14, 14).
 
     Previously this ignored its argument and returned (14, 14), which is right
@@ -139,9 +136,8 @@ def main(config_path: str):
     print(f"[INFO] Grad-CAM target layer: {target_layer.__class__.__name__}")
     gc = GradCAM(timm_model, target_layer=target_layer)
 
-    # SHAP setup
-    # For superpixel SHAP we need uint8 RGB; predict_fn handles normalization internally
-    predict_fn = make_predict_fn_from_torch(timm_model, device)
+    # SHAP setup: the explainers below take (model, device) directly and
+    # normalise internally, so no predict function is built here.
 
     do_shap = bool(cfg.get("do_shap", True))
     do_shap_vit_patch = bool(cfg.get("do_shap_vit_patch", False))

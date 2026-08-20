@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -10,8 +9,8 @@ from torch.utils.data import DataLoader, Dataset
 
 from sentinelinspect.data.validate_dataset import validate
 from sentinelinspect.preprocessing.transforms import (
-    build_train_transforms,
     build_eval_transforms,
+    build_train_transforms,
 )
 
 # Ordered by preference. `relative_path` first: it is portable across machines
@@ -19,7 +18,7 @@ from sentinelinspect.preprocessing.transforms import (
 PATH_CANDIDATES = ("relative_path", "image_path", "path")
 
 class CrackDataset(Dataset):
-    def __init__(self, image_paths: List[str], labels: List[int], transform=None):
+    def __init__(self, image_paths: list[str], labels: list[int], transform=None):
         self.image_paths = image_paths
         self.labels = [int(x) for x in labels]
         self.transform = transform
@@ -98,7 +97,7 @@ class CrackDataModule(pl.LightningDataModule):
         if missing:
             raise FileNotFoundError(f"Missing required processed artifacts: {missing}")
 
-    def setup(self, stage: Optional[str] = None):
+    def setup(self, stage: str | None = None):
         if self.validate_artifacts:
             report = validate(
                 manifest_path=self.manifest_path,
@@ -135,8 +134,8 @@ class CrackDataModule(pl.LightningDataModule):
             raise ValueError(f"[{split_name}] missing required column: label")
 
         path_col = self._resolve_path_column(df)
-        paths: List[str] = []
-        labels: List[int] = []
+        paths: list[str] = []
+        labels: list[int] = []
 
         for _, row in df.iterrows():
             p = Path(str(row[path_col]))

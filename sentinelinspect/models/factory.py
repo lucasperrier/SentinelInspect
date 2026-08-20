@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Type
+from collections.abc import Mapping
+from typing import Any
 
 from sentinelinspect.models.base import CrackClassifier
 from sentinelinspect.models.resnet50 import ResNet50Module
 from sentinelinspect.models.vit import VisionTransformerModule
 
-MODEL_REGISTRY: Dict[str, Type[CrackClassifier]] = {
+MODEL_REGISTRY: dict[str, type[CrackClassifier]] = {
     "resnet50": ResNet50Module,
     "vit": VisionTransformerModule,
 }
@@ -29,7 +30,7 @@ def build_model(model_cfg: Mapping[str, Any]) -> CrackClassifier:
     return model_cls(dict(model_cfg))
 
 
-def model_class_for(name: str) -> Type[CrackClassifier]:
+def model_class_for(name: str) -> type[CrackClassifier]:
     """The class behind a name, for `load_from_checkpoint`."""
     key = str(name).lower()
     try:

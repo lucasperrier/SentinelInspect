@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-
 import argparse
 import hashlib
 import json
-from dataclasses import dataclass, asdict
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 from PIL import Image, UnidentifiedImageError

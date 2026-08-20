@@ -3,17 +3,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 from pathlib import Path
-from typing import Tuple
 
 import pandas as pd
 
 DEFAULT_SPLIT_KEY = "sha256"
 
-DEFAULT_SPLIT_RATIOS: Tuple[float, float, float] = (0.70, 0.15, 0.15)
+DEFAULT_SPLIT_RATIOS: tuple[float, float, float] = (0.70, 0.15, 0.15)
 
 
 def stable_hash_to_unit_interval(value: str, seed: int = 42) -> float:
-    payload = f"{seed}::{value}".encode("utf-8")
+    payload = f"{seed}::{value}".encode()
     digest = hashlib.sha256(payload).hexdigest()
     int_value = int(digest[:16], 16)
     max_value = float(16**16 - 1)

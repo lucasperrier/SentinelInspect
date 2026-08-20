@@ -168,7 +168,7 @@ def test_split_balance_reports_proportions_that_sum_to_one():
     balance = split_balance(out)
 
     assert set(balance.index) == {"train", "val", "test"}
-    for split_name, row in balance.iterrows():
+    for _split_name, row in balance.iterrows():
         assert row.sum() == pytest.approx(1.0, abs=1e-6)
 
 

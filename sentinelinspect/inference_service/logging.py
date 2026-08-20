@@ -11,14 +11,14 @@ import json
 import logging
 import sys
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 LOGGER_NAME = "sentinelinspect.service"
 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             "level": record.levelname,
             "event": record.getMessage(),
@@ -49,7 +49,7 @@ def log_event(event: str, level: int = logging.INFO, **context: Any) -> None:
 class Timer:
     """Wall-clock timing for a block, in milliseconds."""
 
-    def __enter__(self) -> "Timer":
+    def __enter__(self) -> Timer:
         self._start = time.perf_counter()
         self.elapsed_ms = 0.0
         return self

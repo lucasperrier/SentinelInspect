@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -34,8 +33,8 @@ class GradCAM:
         self.model = model
         self.target_layer = target_layer
 
-        self._acts: Optional[torch.Tensor] = None
-        self._grads: Optional[torch.Tensor] = None
+        self._acts: torch.Tensor | None = None
+        self._grads: torch.Tensor | None = None
 
         self._fwd_handle = target_layer.register_forward_hook(self._forward_hook)
         self._bwd_handle = target_layer.register_full_backward_hook(self._backward_hook)
@@ -63,9 +62,9 @@ class GradCAM:
     def __call__(
         self,
         x: torch.Tensor,
-        class_idx: Optional[Union[int, torch.Tensor]] = None,
+        class_idx: int | torch.Tensor | None = None,
         *,
-        vit_grid: Optional[Tuple[int, int]] = None,
+        vit_grid: tuple[int, int] | None = None,
     ) -> CAMOutput:
         """
         Compute CAM for input x.
@@ -151,7 +150,7 @@ class GradCAM:
         raise ValueError(f"Unsupported activation shape for CAM: {tuple(acts.shape)}")
 
 
-def upsample_cam_to_image(cam: torch.Tensor, image_hw: Tuple[int, int]) -> torch.Tensor:
+def upsample_cam_to_image(cam: torch.Tensor, image_hw: tuple[int, int]) -> torch.Tensor:
     """
     Utility: upsample CAM (B,1,h,w) to (B,1,H,W) for overlay on 224x224 images.
     """

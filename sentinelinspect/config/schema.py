@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal, Optional
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DataConfig(BaseModel):
@@ -35,7 +36,7 @@ class ModelConfig(BaseModel):
     learning_rate: float = Field(gt=0.0)
     weight_decay: float = Field(ge=0.0)
     optimizer: str
-    scheduler: Optional[str] = None
+    scheduler: str | None = None
 
 
 class TrainerConfig(BaseModel):
@@ -55,7 +56,7 @@ class MlflowConfig(BaseModel):
 
     tracking_uri: str
     experiment_name: str
-    registry_uri: Optional[str] = None
+    registry_uri: str | None = None
     use_mlflow: bool = True
 
 
@@ -81,7 +82,7 @@ class ReviewConfig(BaseModel):
     upper: float = Field(default=0.65, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
-    def validate_band(self) -> "ReviewConfig":
+    def validate_band(self) -> ReviewConfig:
         if self.lower > self.upper:
             raise ValueError(f"review.lower ({self.lower}) must not exceed review.upper ({self.upper})")
         return self
@@ -106,19 +107,19 @@ class RuntimeConfig(BaseModel):
     model: ModelConfig
     mlflow: MlflowConfig
 
-    trainer: Optional[TrainerConfig] = None
-    service: Optional[ServiceConfig] = None
-    preprocessing: Optional[PreprocessingConfig] = None
-    review: Optional[ReviewConfig] = None
+    trainer: TrainerConfig | None = None
+    service: ServiceConfig | None = None
+    preprocessing: PreprocessingConfig | None = None
+    review: ReviewConfig | None = None
 
-    checkpoint_path: Optional[str] = None
-    output_dir: Optional[str] = None
-    split: Optional[Literal["train", "val", "test"]] = None
-    device: Optional[Literal["cpu", "gpu", "auto"]] = None
-    image_path: Optional[str] = None
+    checkpoint_path: str | None = None
+    output_dir: str | None = None
+    split: Literal["train", "val", "test"] | None = None
+    device: Literal["cpu", "gpu", "auto"] | None = None
+    image_path: str | None = None
 
     @model_validator(mode="after")
-    def validate_task_requirements(self) -> "RuntimeConfig":
+    def validate_task_requirements(self) -> RuntimeConfig:
         if self.task in {"train", "eval"} and self.trainer is None:
             raise ValueError("trainer is required for task=train/eval")
         if self.task == "eval" and self.split is None:

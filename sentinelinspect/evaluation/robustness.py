@@ -1,6 +1,5 @@
 import math
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -27,7 +26,7 @@ def _binary_iou(pred: np.ndarray, target: np.ndarray) -> float:
     return float(intersection / union) if union > 0 else 0.0
 
 
-def localization_accuracy_from_dirs(cam_dir: Optional[str], mask_dir: Optional[str], threshold: float = 0.5) -> float:
+def localization_accuracy_from_dirs(cam_dir: str | None, mask_dir: str | None, threshold: float = 0.5) -> float:
     if not cam_dir or not mask_dir:
         return float('nan')
 
@@ -52,7 +51,7 @@ def localization_accuracy_from_dirs(cam_dir: Optional[str], mask_dir: Optional[s
     return float(np.mean(scores)) if scores else float('nan')
 
 
-def faithfulness_drop_from_csv(csv_path: Optional[str]) -> float:
+def faithfulness_drop_from_csv(csv_path: str | None) -> float:
     if not csv_path:
         return float('nan')
     csv_file = Path(csv_path)

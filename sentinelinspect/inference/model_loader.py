@@ -6,9 +6,10 @@ answer, and so the service can load once at startup rather than per request.
 
 from __future__ import annotations
 
-from pathlib import Path
 import warnings
-from typing import Any, Dict, Mapping, Optional
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -47,7 +48,7 @@ def resolve_checkpoint(checkpoint_path: str | Path) -> Path:
 ARCHITECTURE_KEYS = ("name", "model", "num_classes")
 
 
-def read_checkpoint_hyperparameters(checkpoint_path: str | Path) -> Dict[str, Any]:
+def read_checkpoint_hyperparameters(checkpoint_path: str | Path) -> dict[str, Any]:
     """The hyper_parameters Lightning stored when the checkpoint was written."""
     payload = torch.load(str(resolve_checkpoint(checkpoint_path)), map_location="cpu", weights_only=False)
     stored = payload.get("hyper_parameters", {}) or {}
@@ -56,8 +57,8 @@ def read_checkpoint_hyperparameters(checkpoint_path: str | Path) -> Dict[str, An
 
 def resolve_model_config(
     checkpoint_path: str | Path,
-    model_config: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+    model_config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Merge a config with the checkpoint, letting the checkpoint win on architecture.
 
     Config supplies everything else; the checkpoint decides what it is. Trusting
@@ -65,7 +66,7 @@ def resolve_model_config(
     time after someone edits `configs/model/*.yaml` -- the weights on disk did
     not change, only the file claiming to describe them did.
     """
-    config: Dict[str, Any] = dict(model_config or {})
+    config: dict[str, Any] = dict(model_config or {})
     stored = read_checkpoint_hyperparameters(checkpoint_path)
 
     for key in ARCHITECTURE_KEYS:
@@ -87,7 +88,7 @@ def resolve_model_config(
 
 def load_model(
     checkpoint_path: str | Path,
-    model_config: Optional[Mapping[str, Any]] = None,
+    model_config: Mapping[str, Any] | None = None,
     device: torch.device | str = "cpu",
 ) -> CrackClassifier:
     """Load a trained model, ready for inference."""

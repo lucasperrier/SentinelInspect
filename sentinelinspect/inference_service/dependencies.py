@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Optional
 
 from fastapi import HTTPException, Request, status
 
@@ -32,9 +31,9 @@ def max_upload_bytes() -> int:
 
 
 def load_runtime_config(
-    checkpoint_path: Optional[str] = None,
-    config_dir: Optional[str | Path] = None,
-    overrides: Optional[List[str]] = None,
+    checkpoint_path: str | None = None,
+    config_dir: str | Path | None = None,
+    overrides: list[str] | None = None,
 ) -> RuntimeConfig:
     """Compose the same Hydra config the CLI uses.
 
@@ -59,8 +58,8 @@ def load_runtime_config(
 
 
 def build_predictor(
-    checkpoint_path: Optional[str] = None,
-    config_dir: Optional[str | Path] = None,
+    checkpoint_path: str | None = None,
+    config_dir: str | Path | None = None,
 ) -> Predictor:
     runtime = load_runtime_config(checkpoint_path=checkpoint_path, config_dir=config_dir)
     if not runtime.checkpoint_path:

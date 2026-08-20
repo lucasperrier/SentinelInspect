@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional, Tuple, Union, List
 
 import numpy as np
 import torch
@@ -19,7 +19,7 @@ class SHAPOutput:
     """
     values: np.ndarray
     base_values: np.ndarray
-    target_class: Union[int, np.ndarray]
+    target_class: int | np.ndarray
 
 
 def make_predict_fn_from_torch(
@@ -91,7 +91,7 @@ def shap_explain_superpixels(
     predict_fn: Callable[[np.ndarray], np.ndarray],
     images_uint8: np.ndarray,
     *,
-    target_class: Optional[int] = None,
+    target_class: int | None = None,
     max_evals: int = 500,
     batch_size: int = 16,
     segmentation: str = "slic",
@@ -132,7 +132,7 @@ def shap_explain_resnet_superpixels_kernel(
     device: torch.device,
     image_uint8: np.ndarray,
     *,
-    target_class: Optional[int] = None,
+    target_class: int | None = None,
     n_segments: int = 80,
     compactness: float = 10.0,
     nsamples: int = 500,
@@ -215,8 +215,8 @@ def shap_explain_vit_patches_kernel(
     image_t: torch.Tensor,
     *,
     patch_size: int = 16,
-    vit_grid: Tuple[int, int] = (14, 14),
-    target_class: Optional[int] = None,
+    vit_grid: tuple[int, int] = (14, 14),
+    target_class: int | None = None,
     nsamples: int = 300,
     baseline: str = "blur",
 ) -> SHAPOutput:
@@ -268,7 +268,7 @@ def shap_explain_vit_patches_kernel(
         KernelExplainer expects a 2D output. We explain a *single* scalar:
         p(class=tgt). So we must return shape (K, 1).
         """
-        outs: List[float] = []
+        outs: list[float] = []
         with torch.no_grad():
             for mask in masks:
                 x_masked = apply_mask(mask.astype(np.float32))

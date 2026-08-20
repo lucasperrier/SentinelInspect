@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -18,10 +17,9 @@ from sentinelinspect import __version__
 from sentinelinspect.inference_service.dependencies import build_predictor
 from sentinelinspect.inference_service.logging import configure_logging, log_event
 from sentinelinspect.inference_service.routes import router
-from sentinelinspect.inference_service.schemas import HealthResponse
 
 
-def create_app(checkpoint_path: Optional[str] = None, config_dir: Optional[str] = None) -> FastAPI:
+def create_app(checkpoint_path: str | None = None, config_dir: str | None = None) -> FastAPI:
     configure_logging()
 
     @asynccontextmanager

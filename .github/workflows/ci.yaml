@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push makes an in-flight run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  quality:
+    name: lint, tests, API smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # CPU wheels only. The default Linux torch pulls several GB of CUDA
+      # libraries that no GitHub runner will ever use, and the install alone
+      # would dominate the job.
+      - name: Install CPU torch
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+
+      - name: Install the package
+        run: pip install -e ".[dev,api,explain]"
+
+      - name: Lint
+        run: ruff check sentinelinspect tests
+
+      # The suite builds its own tiny checkpoint and never reads data/, so CI
+      # needs none of the 780 MB dataset.
+      - name: Tests
+        run: pytest -q
+
+      - name: Verify no absolute paths would be written to a manifest
+        run: |
+          python - <<'PY'
+          from dataclasses import fields
+          from sentinelinspect.data.build_manifest import ManifestRecord
+          names = {f.name for f in fields(ManifestRecord)}
+          assert "path" not in names, "manifest must not carry an absolute path column"
+          assert {"relative_path", "sha256"} <= names
+          print("manifest schema is portable")
+          PY
+
+      - name: API smoke test
+        run: |
+          python - <<'PY'
+          import torch
+          from sentinelinspect.models.factory import build_model
+          cfg = {"name": "resnet50", "model": "resnet18", "num_classes": 2,
+                 "pretrained": False, "learning_rate": 1e-3, "weight_decay": 1e-4,
+                 "optimizer": "adam", "scheduler": None}
+          model = build_model(cfg)
+          torch.save({"state_dict": model.state_dict(), "hyper_parameters": cfg,
+                      "pytorch-lightning_version": "2.0.0", "epoch": 0, "global_step": 0},
+                     "ci-smoke.ckpt")
+          PY
+          SENTINELINSPECT_CHECKPOINT=ci-smoke.ckpt \
+            uvicorn sentinelinspect.inference_service.app:app --port 8000 &
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8000/health && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/health | tee /dev/stderr | grep -q '"status":"ok"'
+          python -c "
+          from PIL import Image
+          import numpy as np
+          Image.fromarray(np.zeros((64,64,3), dtype=np.uint8)).save('ci-smoke.jpg')
+          "
+          curl -fsS -F "file=@ci-smoke.jpg;type=image/jpeg" http://localhost:8000/predict \
+            | tee /dev/stderr | grep -q '"predicted_label"'
+
+      - name: Publish the smoke checkpoint for the container job
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-checkpoint
+          path: ci-smoke.ckpt
+          retention-days: 1
+
+  container:
+    name: docker build and run
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke-checkpoint
+          path: models
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          push: false
+          load: true
+          tags: sentinelinspect-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run the container and wait for it to become healthy
+        run: |
+          chmod -R a+rX models
+          docker run -d --name api -p 8000:8000 \
+            -v "$PWD/models:/models:ro" \
+            -e SENTINELINSPECT_CHECKPOINT=/models/ci-smoke.ckpt \
+            sentinelinspect-api:ci
+
+          for i in $(seq 1 45); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "healthy after ${i} attempts"; break
+            fi
+            sleep 2
+          done
+
+          curl -fsS http://localhost:8000/health | tee /dev/stderr | grep -q '"status":"ok"'
+
+      - name: Predict through the container
+        run: |
+          python -c "
+          from PIL import Image
+          import numpy as np
+          Image.fromarray(np.zeros((64,64,3), dtype=np.uint8)).save('smoke.jpg')
+          "
+          curl -fsS -F "file=@smoke.jpg;type=image/jpeg" http://localhost:8000/predict \
+            | tee /dev/stderr | grep -q '"predicted_label"'
+
+      - name: Container logs
+        if: always()
+        run: docker logs api || true
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f api || true

@@ -10,8 +10,9 @@ drift; three copies of the same twenty lines always do.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Iterable, List, Mapping, Optional, Sequence, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -34,7 +35,7 @@ from sentinelinspect.inference.model_loader import (
 )
 from sentinelinspect.preprocessing.transforms import build_inference_transforms
 
-ImageInput = Union[str, Path, bytes, Image.Image, np.ndarray]
+ImageInput = str | Path | bytes | Image.Image | np.ndarray
 
 
 class InvalidImageError(ValueError):
@@ -50,9 +51,9 @@ class Predictor:
         self,
         model: torch.nn.Module,
         metadata: ModelMetadata,
-        preprocessing: Optional[Mapping[str, Any]] = None,
-        review_policy: Optional[ReviewPolicy] = None,
-        device: Optional[torch.device] = None,
+        preprocessing: Mapping[str, Any] | None = None,
+        review_policy: ReviewPolicy | None = None,
+        device: torch.device | None = None,
         class_names: Sequence[str] = CLASS_NAMES,
     ) -> None:
         self.model = model
@@ -70,10 +71,10 @@ class Predictor:
         cls,
         checkpoint_path: str | Path,
         model_config: Mapping[str, Any],
-        preprocessing: Optional[Mapping[str, Any]] = None,
-        review_policy: Optional[ReviewPolicy] = None,
+        preprocessing: Mapping[str, Any] | None = None,
+        review_policy: ReviewPolicy | None = None,
         device: str | None = None,
-    ) -> "Predictor":
+    ) -> Predictor:
         resolved_device = resolve_device(device)
         # what actually loaded, which may differ from what the config asked for
         resolved_config = resolve_model_config(checkpoint_path, model_config)
@@ -95,7 +96,7 @@ class Predictor:
         )
 
     @classmethod
-    def from_runtime_config(cls, runtime) -> "Predictor":
+    def from_runtime_config(cls, runtime) -> Predictor:
         """Build from a validated RuntimeConfig, so the CLI, the service and
         evaluation all read the same configuration keys."""
         if not runtime.checkpoint_path:
@@ -136,7 +137,7 @@ class Predictor:
 
     # ---- adapters --------------------------------------------------------
 
-    def predict_tensor(self, batch: torch.Tensor) -> List[Prediction]:
+    def predict_tensor(self, batch: torch.Tensor) -> list[Prediction]:
         """For data that is already preprocessed -- the evaluation dataloader.
 
         Sharing this with the image path is what guarantees offline metrics and

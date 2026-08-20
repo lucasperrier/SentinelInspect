@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-
-DEFAULTS: Dict[str, Any] = {
+DEFAULTS: dict[str, Any] = {
     "image_size": 224,
     "mean": [0.485, 0.456, 0.406],
     "std": [0.229, 0.224, 0.225],
@@ -19,7 +18,7 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 
-def resolve_preprocessing(pre: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def resolve_preprocessing(pre: dict[str, Any] | None) -> dict[str, Any]:
     """Fill in defaults for a preprocessing block.
 
     Takes the preprocessing settings themselves, not the config tree that
@@ -45,7 +44,7 @@ def resolve_preprocessing(pre: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return resolved
 
 
-def build_train_transforms(pre: Optional[Dict[str, Any]] = None) -> A.Compose:
+def build_train_transforms(pre: dict[str, Any] | None = None) -> A.Compose:
     p = resolve_preprocessing(pre)
     return A.Compose([
         A.Resize(p["image_size"], p["image_size"]),
@@ -62,7 +61,7 @@ def build_train_transforms(pre: Optional[Dict[str, Any]] = None) -> A.Compose:
     ])
 
 
-def build_val_transforms(pre: Optional[Dict[str, Any]] = None) -> A.Compose:
+def build_val_transforms(pre: dict[str, Any] | None = None) -> A.Compose:
     """Deterministic pipeline: resize, normalise, to tensor. No augmentation.
 
     Evaluation and inference must both use this, or the model sees a different
@@ -76,9 +75,9 @@ def build_val_transforms(pre: Optional[Dict[str, Any]] = None) -> A.Compose:
     ])
 
 
-def build_eval_transforms(pre: Optional[Dict[str, Any]] = None) -> A.Compose:
+def build_eval_transforms(pre: dict[str, Any] | None = None) -> A.Compose:
     return build_val_transforms(pre)
 
 
-def build_inference_transforms(pre: Optional[Dict[str, Any]] = None) -> A.Compose:
+def build_inference_transforms(pre: dict[str, Any] | None = None) -> A.Compose:
     return build_val_transforms(pre)

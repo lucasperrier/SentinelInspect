@@ -7,7 +7,8 @@ a checkpoint or a dataset.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 from sklearn.metrics import (
@@ -35,7 +36,8 @@ def weighted_mean_loss(batch_losses: Sequence[float], batch_sizes: Sequence[int]
     total = sum(int(n) for n in batch_sizes)
     if total == 0:
         return float("nan")
-    return float(sum(l * n for l, n in zip(batch_losses, batch_sizes)) / total)
+    pairs = zip(batch_losses, batch_sizes, strict=True)
+    return float(sum(loss * size for loss, size in pairs) / total)
 
 
 def compute_metrics(
@@ -43,8 +45,8 @@ def compute_metrics(
     y_pred: np.ndarray,
     y_prob_pos: np.ndarray,
     prefix: str = "test",
-) -> Dict[str, Any]:
-    metrics: Dict[str, Any] = {
+) -> dict[str, Any]:
+    metrics: dict[str, Any] = {
         f"{prefix}_acc": float(accuracy_score(y_true, y_pred)),
         f"{prefix}_f1": float(f1_score(y_true, y_pred, average="binary", zero_division=0)),
     }
@@ -82,7 +84,7 @@ def review_statistics(
     y_prob_pos: np.ndarray,
     lower: float,
     upper: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """What the triage rule actually buys.
 
     Two numbers decide whether a band is worth deploying: how much work it
@@ -114,7 +116,7 @@ def tune_review_band(
     target_error_recall: float = 0.80,
     max_review_rate: float = 0.10,
     step: float = 0.01,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Choose the narrowest symmetric band catching `target_error_recall` of errors.
 
     Tuned on validation, never on test. Widening the band always catches more

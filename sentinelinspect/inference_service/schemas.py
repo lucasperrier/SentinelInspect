@@ -8,8 +8,6 @@ someone added a field to one of them.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from sentinelinspect.inference.contracts import (
@@ -42,10 +40,10 @@ class HealthResponse(BaseModel):
 
     status: str = Field(description="'ok' once the model is loaded and serving")
     model_loaded: bool
-    model_name: Optional[str] = None
-    checkpoint_sha256: Optional[str] = None
+    model_name: str | None = None
+    checkpoint_sha256: str | None = None
     package_version: str
-    review_band: Optional[List[float]] = None
+    review_band: list[float] | None = None
 
 
 class ErrorResponse(BaseModel):

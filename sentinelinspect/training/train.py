@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import hydra
 import mlflow
@@ -18,7 +18,7 @@ from sentinelinspect.data.datamodule import CrackDataModule
 from sentinelinspect.models.factory import build_model
 
 
-def flatten_dict(cfg: Dict[str, Any], parent_key: str = "", sep: str = ".") -> Dict[str, Any]:
+def flatten_dict(cfg: dict[str, Any], parent_key: str = "", sep: str = ".") -> dict[str, Any]:
     items = []
     for k, v in cfg.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k

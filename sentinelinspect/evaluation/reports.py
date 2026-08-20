@@ -8,8 +8,9 @@ scattered through the evaluation script.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -23,12 +24,12 @@ BUNDLE_FILES = (
 
 def write_bundle(
     output_dir: str | Path,
-    metrics: Dict[str, Any],
+    metrics: dict[str, Any],
     y_true: np.ndarray,
     y_pred: np.ndarray,
     y_prob_pos: np.ndarray,
-    needs_review: Optional[np.ndarray] = None,
-    relative_paths: Optional[Sequence[str]] = None,
+    needs_review: np.ndarray | None = None,
+    relative_paths: Sequence[str] | None = None,
 ) -> Path:
     """Write the artifacts that define an evaluation result.
 
@@ -48,7 +49,7 @@ def write_bundle(
 
     np.save(out / "confusion_matrix.npy", np.array(metrics["confusion_matrix"], dtype=np.int64))
 
-    arrays: Dict[str, np.ndarray] = {
+    arrays: dict[str, np.ndarray] = {
         "y_true": np.asarray(y_true),
         "y_pred": np.asarray(y_pred),
         "y_prob_pos": np.asarray(y_prob_pos),
@@ -62,7 +63,7 @@ def write_bundle(
     return out
 
 
-def summarise(metrics: Dict[str, Any], review: Optional[Dict[str, Any]] = None) -> str:
+def summarise(metrics: dict[str, Any], review: dict[str, Any] | None = None) -> str:
     """A few lines a human can read without opening the JSON."""
     lines = [
         f"accuracy          {metrics.get('test_acc', float('nan')):.4f}",
