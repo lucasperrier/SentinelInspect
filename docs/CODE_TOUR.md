@@ -9,7 +9,7 @@ end to end. Session 2 covers evaluation, inference and explainability.
 ## Session 1 — anatomy of a training run
 
 ```bash
-python -m src.training.train
+python -m sentinelinspect.training.train
 ```
 
 Nine things happen. Each one is a boundary worth understanding.
@@ -55,9 +55,9 @@ written directly in `train.yaml` override anything the groups set.
 **Swapping a group** is the point of the design:
 
 ```bash
-python -m src.training.train model=vit          # loads configs/model/vit.yaml instead
-python -m src.training.train trainer.max_epochs=3
-python -m src.training.train "checkpoint_path='runs/a-epoch=03.ckpt'"
+python -m sentinelinspect.training.train model=vit          # loads configs/model/vit.yaml instead
+python -m sentinelinspect.training.train trainer.max_epochs=3
+python -m sentinelinspect.training.train "checkpoint_path='runs/a-epoch=03.ckpt'"
 ```
 
 The quoting in the third line is not decoration. Hydra's override parser treats
@@ -81,12 +81,12 @@ every relative path in the config would break.
 ### 3 · Pydantic validates the tree
 
 ```python
-runtime = to_runtime_config(cfg)      # src/config/load.py
+runtime = to_runtime_config(cfg)      # sentinelinspect/config/load.py
 ```
 
 `OmegaConf.to_container(cfg, resolve=True)` turns the config into a plain dict
 with interpolations expanded, then `RuntimeConfig.model_validate(raw)` type-checks
-it against `src/config/schema.py`.
+it against `sentinelinspect/config/schema.py`.
 
 Two `ConfigDict` settings do most of the work:
 
@@ -199,7 +199,7 @@ def build_model(model_cfg):
 ```
 
 This function exists in **three** copies — `train.py`, `evaluate.py` and
-`predict.py` — while `src/models/factory.py`, which is exactly where it belongs,
+`predict.py` — while `sentinelinspect/models/factory.py`, which is exactly where it belongs,
 is an empty file.
 
 Inside `ResNet50Module.__init__`:
@@ -284,7 +284,7 @@ configuration; every artifact is reproducible from them.
 | Inheritance | `CrackDataModule(pl.LightningDataModule)` | Correct here: Lightning dispatches on the base type. |
 | Composition | `self.model = timm.create_model(...)` | The module *has a* backbone rather than *being one*. Lets you swap ResNet for ViT without touching the training logic. |
 | `@dataclass` | `ManifestRecord`, `ValidationReport` | Plain data, no validation needed. Free `__init__` and `__repr__`. |
-| Pydantic `BaseModel` | `src/config/schema.py` | Data crossing a trust boundary — validates and coerces types at the edge. |
+| Pydantic `BaseModel` | `sentinelinspect/config/schema.py` | Data crossing a trust boundary — validates and coerces types at the edge. |
 | Factory function | `build_model` | Picks a class from a string. Currently duplicated three times. |
 
 **Rule of thumb this codebase illustrates:** inherit when a framework needs to
@@ -310,10 +310,10 @@ three entrypoints and then inventories what does not exist yet.
 
 ---
 
-### A · Evaluation — `src/evaluation/evaluate.py`
+### A · Evaluation — `sentinelinspect/evaluation/evaluate.py`
 
 ```bash
-python -m src.evaluation.evaluate "checkpoint_path='runs/.../model.ckpt'"
+python -m sentinelinspect.evaluation.evaluate "checkpoint_path='runs/.../model.ckpt'"
 ```
 
 Same Hydra + Pydantic front end as training, reading `configs/eval.yaml`. Then:
@@ -358,7 +358,7 @@ metric can be computed later without re-running the model.
 
 ---
 
-### B · Inference — `src/inference/predict.py`
+### B · Inference — `sentinelinspect/inference/predict.py`
 
 After the Stage 1 fixes this is 61 lines: load config, load checkpoint via the
 factory, build the *shared* inference transform, run one image, print a dict.
@@ -387,7 +387,7 @@ That is precisely what Stage 4 replaces with a `Predictor` class.
 
 ---
 
-### C · Explainability — `src/explainability/`
+### C · Explainability — `sentinelinspect/explainability/`
 
 836 lines, the largest subsystem in the repo, and entirely disconnected from
 the other three entrypoints.
@@ -470,18 +470,18 @@ def vit_grid_from_name(model_name: str) -> Tuple[int, int]:
 
 | Group | Files | Verdict |
 | --- | --- | --- |
-| `src/inference_service/` | 5 | Stage 6 builds these |
-| `src/inference/` core | `contracts.py`, `model_loader.py`, `batch_predict.py` | Stage 4 |
-| `src/evaluation/` | `metrics.py`, `reports.py` | Stage 4, extracting from `evaluate.py` |
+| `sentinelinspect/inference_service/` | 5 | Stage 6 builds these |
+| `sentinelinspect/inference/` core | `contracts.py`, `model_loader.py`, `batch_predict.py` | Stage 4 |
+| `sentinelinspect/evaluation/` | `metrics.py`, `reports.py` | Stage 4, extracting from `evaluate.py` |
 | `scripts/` | 5 wrappers + `start_api.sh` | Redundant: `python -m` already works. Delete. |
-| `src/mlops/` | 4 | Out of scope per the plan. Delete. |
-| `src/monitoring/` | 3 | Out of scope. Delete. |
-| `src/jobs/` | 3 | Out of scope. Delete. |
-| `src/utils/` | 4 | Speculative. Delete until something needs them. |
-| `src/data/dataset.py`, `schemas.py` | 2 | Superseded: the dataset lives in `datamodule.py`. Delete. |
-| `src/preprocessing/preprocess.py` | 1 | Superseded by `transforms.py`. Delete. |
-| `src/training/callbacks.py`, `reproducibility.py` | 2 | Superseded: Lightning provides both. Delete. |
-| `src/models/factory.py` | — | **Filled in Stage 1.** |
+| `sentinelinspect/mlops/` | 4 | Out of scope per the plan. Delete. |
+| `sentinelinspect/monitoring/` | 3 | Out of scope. Delete. |
+| `sentinelinspect/jobs/` | 3 | Out of scope. Delete. |
+| `sentinelinspect/utils/` | 4 | Speculative. Delete until something needs them. |
+| `sentinelinspect/data/dataset.py`, `schemas.py` | 2 | Superseded: the dataset lives in `datamodule.py`. Delete. |
+| `sentinelinspect/preprocessing/preprocess.py` | 1 | Superseded by `transforms.py`. Delete. |
+| `sentinelinspect/training/callbacks.py`, `reproducibility.py` | 2 | Superseded: Lightning provides both. Delete. |
+| `sentinelinspect/models/factory.py` | — | **Filled in Stage 1.** |
 | `pyproject.toml`, `.github/workflows/ci.yaml`, `docker/` | 4 | Stages 2 and 8 |
 
 Roughly 24 of the 39 should simply be deleted. An empty file is a promise the
@@ -494,13 +494,13 @@ repository does not keep.
 The ImageNet normalisation constants appear in **eight** places:
 
 ```
-src/preprocessing/transforms.py   DEFAULTS
-src/data/datamodule.py            fallback dict (now redundant)
+sentinelinspect/preprocessing/transforms.py   DEFAULTS
+sentinelinspect/data/datamodule.py            fallback dict (now redundant)
 configs/train.yaml                preprocessing block
 configs/eval.yaml                 preprocessing block
 configs/inference.yaml            preprocessing block
-src/explainability/utils.py       IMAGENET_MEAN / IMAGENET_STD
-src/explainability/shap_utils.py  inline, twice
+sentinelinspect/explainability/utils.py       IMAGENET_MEAN / IMAGENET_STD
+sentinelinspect/explainability/shap_utils.py  inline, twice
 ```
 
 The three config files are legitimate — that is configuration. The code copies

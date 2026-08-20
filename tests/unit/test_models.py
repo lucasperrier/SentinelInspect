@@ -2,10 +2,10 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.models.base import STAGES, CrackClassifier
-from src.models.factory import MODEL_REGISTRY, build_model, model_class_for
-from src.models.resnet50 import ResNet50Module
-from src.models.vit import VisionTransformerModule
+from sentinelinspect.models.base import STAGES, CrackClassifier
+from sentinelinspect.models.factory import MODEL_REGISTRY, build_model, model_class_for
+from sentinelinspect.models.resnet50 import ResNet50Module
+from sentinelinspect.models.vit import VisionTransformerModule
 
 
 class TinyClassifier(CrackClassifier):

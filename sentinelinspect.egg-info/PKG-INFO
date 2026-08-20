@@ -1,3 +1,38 @@
+Metadata-Version: 2.4
+Name: sentinelinspect
+Version: 0.1.0
+Summary: A visual inspection triage system: reproducible data contracts, standardised evaluation, and deployable inference.
+Author-email: Lucas Perrier <lucas.j.perrier@gmail.com>
+License: MIT
+Project-URL: Repository, https://github.com/lucasperrier/SentinelInspect
+Keywords: computer-vision,crack-detection,pytorch,mlops
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Private :: Do Not Upload
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: albumentations>=1.4
+Requires-Dist: hydra-core>=1.3
+Requires-Dist: mlflow>=2.9
+Requires-Dist: numpy>=1.26
+Requires-Dist: omegaconf>=2.3
+Requires-Dist: pandas>=2.0
+Requires-Dist: pillow>=10.0
+Requires-Dist: pydantic>=2.5
+Requires-Dist: pytorch-lightning>=2.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: scikit-learn>=1.3
+Requires-Dist: timm>=0.9
+Requires-Dist: torch>=2.0
+Requires-Dist: torchmetrics>=1.0
+Provides-Extra: explain
+Requires-Dist: shap>=0.44; extra == "explain"
+Requires-Dist: scikit-image>=0.22; extra == "explain"
+Requires-Dist: opencv-python>=4.9; extra == "explain"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.2; extra == "dev"
+Requires-Dist: ruff>=0.12; extra == "dev"
+
 # SentinelInspect
 
 ## Production-first visual inspection triage system
@@ -163,19 +198,8 @@ Full detail and success criteria in [`docs/roadmap.md`](docs/roadmap.md).
 > workflow and become fully reproducible once Phase 0 lands.
 
 ```bash
-# install (editable, with the dev tools)
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-# CPU-only machine or container? install torch from the CPU index first,
-# otherwise pip pulls several GB of CUDA wheels you will never use:
-#   pip install torch --index-url https://download.pytorch.org/whl/cpu
-
-# explainability extras (SHAP needs scikit-image; Grad-CAM works without it)
-#   pip install -e ".[dev,explain]"
-
-# run the tests
-pytest
+# install
+pip install -r requirements.txt
 
 # 1. build the manifest from data/raw/
 python -m sentinelinspect.data.build_manifest

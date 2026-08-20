@@ -18,7 +18,7 @@ the surfaces that are still scaffolding. For sequencing, see [`roadmap.md`](road
 flowchart TD
     raw["data/raw/<br/>(sdnet2018, ccic, ...)"] --> manifest
 
-    subgraph data["Data contract  (src/data)"]
+    subgraph data["Data contract  (sentinelinspect/data)"]
         manifest["build_manifest.py<br/>manifest.csv / .json<br/>+ SHA256, dims, label, split hint"]
         splits["splitters.py<br/>deterministic stratified<br/>train/val/test/robustness.csv"]
         validate["validate_dataset.py<br/>duplicates, corrupt files,<br/>split overlap"]
@@ -27,20 +27,20 @@ flowchart TD
 
     validate --> dm["datamodule.py<br/>CrackDataModule (Lightning)"]
 
-    subgraph train["Training  (src/training, src/models)"]
+    subgraph train["Training  (sentinelinspect/training, sentinelinspect/models)"]
         dm --> trainer["train.py<br/>Hydra + Lightning Trainer"]
         trainer --> models["ResNet50Module / ViTModule<br/>(timm backbones)"]
         trainer --> mlflow[("MLflow<br/>sqlite:///mlflow.db")]
         trainer --> ckpt["runs/ checkpoints"]
     end
 
-    subgraph eval["Evaluation  (src/evaluation)"]
+    subgraph eval["Evaluation  (sentinelinspect/evaluation)"]
         ckpt --> evaluate["evaluate.py"]
         dm --> evaluate
         evaluate --> bundle["reports/ bundle<br/>metrics.json, confusion_matrix.npy,<br/>classification_report.txt, predictions.npz"]
     end
 
-    subgraph infer["Inference  (src/inference, src/inference_service)"]
+    subgraph infer["Inference  (sentinelinspect/inference, sentinelinspect/inference_service)"]
         ckpt --> core["shared prediction core<br/>(planned, Phase 3)"]
         core --> single["predict.py<br/>single image"]
         core --> batch["batch_predict.py (planned)"]
@@ -63,7 +63,7 @@ Configuration is layered and validated in two stages:
    `mlflow/`, `service/`) into a single run config. Top-level entrypoints are
    `configs/train.yaml`, `configs/eval.yaml`, and `configs/inference.yaml`. CLI overrides
    (e.g. `checkpoint_path=... image_path=...`) work through Hydra.
-2. **Pydantic** (`src/config/schema.py`, applied via `src/config/load.py::to_runtime_config`)
+2. **Pydantic** (`sentinelinspect/config/schema.py`, applied via `sentinelinspect/config/load.py::to_runtime_config`)
    validates the composed config into a typed `RuntimeConfig`. It enforces real invariants —
    split ratios summing to less than 1.0, `trainer` being required for train/eval tasks, a
    `split` being required for eval — so misconfiguration fails before any GPU work starts.
@@ -77,24 +77,24 @@ composition at the edge, strict typing at the core.
 
 | Module | Responsibility | State |
 | --- | --- | --- |
-| `src/data/build_manifest.py` | Walk `data/raw/`, record path, relative path, dataset, split hint, label, dimensions, channels, file size, SHA256 into a manifest | Implemented |
-| `src/data/splitters.py` | Deterministic, optionally stratified train/val/test/robustness splits via stable SHA256 hashing of the relative path | Implemented |
-| `src/data/validate_dataset.py` | Integrity checks: duplicates, missing/unreadable/corrupt images, required columns, cross-split leakage | Implemented |
-| `src/data/datamodule.py` | `CrackDataModule` (Lightning) loads persisted split CSVs, optionally re-validates, builds `CrackDataset` + dataloaders | Implemented |
-| `src/preprocessing/transforms.py` | Albumentations train/val/eval/inference pipelines (resize, flip, brightness/contrast, shift-scale-rotate, normalize, tensor) | Implemented |
-| `src/models/resnet50.py` | `ResNet50Module` — timm backbone, CE loss, torchmetrics, optimizer/scheduler, backbone freezing | Implemented |
-| `src/models/vit.py` | `VisionTransformerModule` — ViT backbone, dropout / drop-path / label smoothing, head-only or first-N-block freezing | Implemented |
-| `src/training/train.py` | Hydra entrypoint: build model, train, checkpoint on `val_loss`, log params/metrics/artifacts to MLflow | Implemented* |
-| `src/evaluation/evaluate.py` | Run test inference, compute metrics, write the `reports/` bundle | Implemented* |
-| `src/evaluation/robustness.py` | Standalone IoU localization and faithfulness-drop helpers | Implemented, not yet wired |
-| `src/explainability/` | Grad-CAM and SHAP attribution utilities and a runner | Implemented |
-| `src/inference/predict.py` | Single-image checkpoint inference | Implemented |
-| `src/config/` | Hydra-to-Pydantic typed config loading and validation | Implemented |
-| `src/inference/batch_predict.py`, `contracts.py`, `model_loader.py` | Batch inference + shared prediction core | Empty (Phase 3) |
-| `src/inference_service/` | FastAPI app, routes, schemas, dependencies, logging | Empty (Phase 3) |
-| `src/evaluation/metrics.py`, `reports.py` | Extracted reusable metric/report helpers | Empty (Phase 2) |
-| `src/monitoring/` | Prediction logging, drift, reporting | Empty (Phase 5) |
-| `src/mlops/`, `src/jobs/`, `src/utils/` | Registry/promotion, offline jobs, shared helpers | Empty (deferred / as needed) |
+| `sentinelinspect/data/build_manifest.py` | Walk `data/raw/`, record path, relative path, dataset, split hint, label, dimensions, channels, file size, SHA256 into a manifest | Implemented |
+| `sentinelinspect/data/splitters.py` | Deterministic, optionally stratified train/val/test/robustness splits via stable SHA256 hashing of the relative path | Implemented |
+| `sentinelinspect/data/validate_dataset.py` | Integrity checks: duplicates, missing/unreadable/corrupt images, required columns, cross-split leakage | Implemented |
+| `sentinelinspect/data/datamodule.py` | `CrackDataModule` (Lightning) loads persisted split CSVs, optionally re-validates, builds `CrackDataset` + dataloaders | Implemented |
+| `sentinelinspect/preprocessing/transforms.py` | Albumentations train/val/eval/inference pipelines (resize, flip, brightness/contrast, shift-scale-rotate, normalize, tensor) | Implemented |
+| `sentinelinspect/models/resnet50.py` | `ResNet50Module` — timm backbone, CE loss, torchmetrics, optimizer/scheduler, backbone freezing | Implemented |
+| `sentinelinspect/models/vit.py` | `VisionTransformerModule` — ViT backbone, dropout / drop-path / label smoothing, head-only or first-N-block freezing | Implemented |
+| `sentinelinspect/training/train.py` | Hydra entrypoint: build model, train, checkpoint on `val_loss`, log params/metrics/artifacts to MLflow | Implemented* |
+| `sentinelinspect/evaluation/evaluate.py` | Run test inference, compute metrics, write the `reports/` bundle | Implemented* |
+| `sentinelinspect/evaluation/robustness.py` | Standalone IoU localization and faithfulness-drop helpers | Implemented, not yet wired |
+| `sentinelinspect/explainability/` | Grad-CAM and SHAP attribution utilities and a runner | Implemented |
+| `sentinelinspect/inference/predict.py` | Single-image checkpoint inference | Implemented |
+| `sentinelinspect/config/` | Hydra-to-Pydantic typed config loading and validation | Implemented |
+| `sentinelinspect/inference/batch_predict.py`, `contracts.py`, `model_loader.py` | Batch inference + shared prediction core | Empty (Phase 3) |
+| `sentinelinspect/inference_service/` | FastAPI app, routes, schemas, dependencies, logging | Empty (Phase 3) |
+| `sentinelinspect/evaluation/metrics.py`, `reports.py` | Extracted reusable metric/report helpers | Empty (Phase 2) |
+| `sentinelinspect/monitoring/` | Prediction logging, drift, reporting | Empty (Phase 5) |
+| `sentinelinspect/mlops/`, `sentinelinspect/jobs/`, `sentinelinspect/utils/` | Registry/promotion, offline jobs, shared helpers | Empty (deferred / as needed) |
 
 `*` Implemented but not green end-to-end — see "Known integration seams" below.
 

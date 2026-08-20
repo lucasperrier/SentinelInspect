@@ -5,7 +5,7 @@ import pytest
 import torch
 from PIL import Image
 
-from src.data.datamodule import CrackDataModule
+from sentinelinspect.data.datamodule import CrackDataModule
 
 
 def _make_image(path: Path, size=(32, 32), color=(255, 255, 255)) -> None:

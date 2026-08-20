@@ -11,9 +11,9 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer, seed_everything
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, roc_auc_score
 
-from src.config.load import to_runtime_config
-from src.data.datamodule import CrackDataModule
-from src.models.factory import model_class_for
+from sentinelinspect.config.load import to_runtime_config
+from sentinelinspect.data.datamodule import CrackDataModule
+from sentinelinspect.models.factory import model_class_for
 
 
 @torch.no_grad()

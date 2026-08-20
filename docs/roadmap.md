@@ -50,8 +50,8 @@ clones the repo cannot run anything.
 
 ### Tasks
 
-- align the `CrackDataModule` constructor call in `src/training/train.py` and
-  `src/evaluation/evaluate.py` with the refactored datamodule signature. The datamodule now
+- align the `CrackDataModule` constructor call in `sentinelinspect/training/train.py` and
+  `sentinelinspect/evaluation/evaluate.py` with the refactored datamodule signature. The datamodule now
   takes `train_split_path` / `val_split_path` / `test_split_path` / `robustness_split_path`,
   **not** the old `val_split` / `test_split` / `robustness_split` float arguments.
 - add a single, well-defined label-encoding step. `build_manifest.py` writes string labels
@@ -65,8 +65,8 @@ clones the repo cannot run anything.
 
 ### Success criteria
 
-- `python -m src.training.train` completes on CPU against the fixture data
-- `python -m src.evaluation.evaluate` writes a full `reports/` bundle
+- `python -m sentinelinspect.training.train` completes on CPU against the fixture data
+- `python -m sentinelinspect.evaluation.evaluate` writes a full `reports/` bundle
 - a fresh clone can reproduce a run from the README alone
 
 ---
@@ -78,7 +78,7 @@ clones the repo cannot run anything.
 ### Current state
 
 Persisted manifest and split CSVs are already the canonical dataset contract, consumed by
-`src/data/datamodule.py`. The earlier version that scanned raw folders and re-split at runtime
+`sentinelinspect/data/datamodule.py`. The earlier version that scanned raw folders and re-split at runtime
 has been refactored out.
 
 ### Tasks
@@ -106,18 +106,18 @@ has been refactored out.
 
 The metric logic already exists in `evaluate.py` (accuracy, F1, ROC AUC, confusion matrix,
 classification report, `predictions.npz`). The gap is that the contract is not yet
-standardized or confidence-aware, and `src/evaluation/metrics.py` is still empty.
+standardized or confidence-aware, and `sentinelinspect/evaluation/metrics.py` is still empty.
 
 ### Tasks
 
-- move reusable metric helpers out of `evaluate.py` into `src/evaluation/metrics.py`
+- move reusable metric helpers out of `evaluate.py` into `sentinelinspect/evaluation/metrics.py`
 - keep `evaluate.py` as the entrypoint but stabilize its output into a fixed bundle
 - save positive-class confidence scores per sample in a reusable form
 - add a first-pass triage rule: mark predictions `needs_review` when confidence falls inside a
   configurable low-confidence band
 - include a simple threshold / coverage-vs-risk summary so the review threshold has
   quantitative backing
-- (optional, supportive) wire the existing `src/evaluation/robustness.py` IoU and faithfulness
+- (optional, supportive) wire the existing `sentinelinspect/evaluation/robustness.py` IoU and faithfulness
   helpers into the bundle rather than leaving them standalone
 
 ### Success criteria
@@ -136,7 +136,7 @@ precedes monitoring.
 
 ### Why
 
-There is already a working single-image path in `src/inference/predict.py` (Hydra config,
+There is already a working single-image path in `sentinelinspect/inference/predict.py` (Hydra config,
 checkpoint load, preprocess, softmax, predicted class). The shortest path is to extract and
 reuse that logic, not rebuild it. Note that `predict.py` currently builds its own
 `torchvision` transform while training/eval use `albumentations`; the shared core should
@@ -146,8 +146,8 @@ remove that train/serve skew.
 
 - extract a single shared prediction core (e.g. `predict_one(image, model) -> result`)
 - have `predict.py`, `batch_predict.py`, and the FastAPI service all call that core
-- finish `src/inference/batch_predict.py`
-- complete the service layer in `src/inference_service/`
+- finish `sentinelinspect/inference/batch_predict.py`
+- complete the service layer in `sentinelinspect/inference_service/`
   (`schemas.py`, `routes.py`, `app.py`, `dependencies.py`)
 - return the full output contract on every request:
   `predicted_label`, `confidence_score`, `needs_review`, `model_metadata`
@@ -196,10 +196,10 @@ an observability platform.
 
 ### Tasks
 
-- implement structured prediction logging in `src/monitoring/prediction_logger.py`, with the
+- implement structured prediction logging in `sentinelinspect/monitoring/prediction_logger.py`, with the
   minimum useful fields: timestamp, model identifier, predicted label, confidence, `needs_review`
-- add one small offline report in `src/monitoring/reporting.py`
-- keep any drift analysis in `src/monitoring/drift.py` lightweight and honest
+- add one small offline report in `sentinelinspect/monitoring/reporting.py`
+- keep any drift analysis in `sentinelinspect/monitoring/drift.py` lightweight and honest
 
 ### Success criteria
 
@@ -213,7 +213,7 @@ an observability platform.
 
 Out of core scope until the must-ship phases are cleanly finished:
 
-- registry/promotion workflows in `src/mlops/`
+- registry/promotion workflows in `sentinelinspect/mlops/`
 - rollback automation
 - champion/challenger orchestration
 - extensive OOD benchmarking

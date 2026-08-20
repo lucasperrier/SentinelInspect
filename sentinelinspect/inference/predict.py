@@ -8,9 +8,9 @@ from omegaconf import DictConfig, OmegaConf
 import numpy as np
 from PIL import Image
 
-from src.config.load import to_runtime_config
-from src.models.factory import model_class_for
-from src.preprocessing.transforms import build_inference_transforms
+from sentinelinspect.config.load import to_runtime_config
+from sentinelinspect.models.factory import model_class_for
+from sentinelinspect.preprocessing.transforms import build_inference_transforms
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="inference")
@@ -31,7 +31,7 @@ def main(cfg: DictConfig) -> None:
     model.to(device)
 
     # Example single-image path; override with CLI:
-    # python -m src.inference.predict image_path=/abs/path/image.jpg checkpoint_path=/abs/path.ckpt
+    # python -m sentinelinspect.inference.predict image_path=/abs/path/image.jpg checkpoint_path=/abs/path.ckpt
     image_path = cfg.get("image_path", None)
     if image_path is None:
         raise ValueError("Please pass image_path=... as Hydra override")

@@ -14,7 +14,7 @@ num_workers: 4
 manifest_path: data/processed/manifests/manifest.csv
 test_split_path: data/processed/splits/test.csv
 
-# set this to a checkpoint from `python -m src.training.train`
+# set this to a checkpoint from `python -m sentinelinspect.training.train`
 checkpoint_path: null
 
 # Output

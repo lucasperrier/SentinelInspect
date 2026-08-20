@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Type
 
-from src.models.base import CrackClassifier
-from src.models.resnet50 import ResNet50Module
-from src.models.vit import VisionTransformerModule
+from sentinelinspect.models.base import CrackClassifier
+from sentinelinspect.models.resnet50 import ResNet50Module
+from sentinelinspect.models.vit import VisionTransformerModule
 
 MODEL_REGISTRY: Dict[str, Type[CrackClassifier]] = {
     "resnet50": ResNet50Module,

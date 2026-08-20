@@ -8,8 +8,8 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
-from src.data.validate_dataset import validate
-from src.preprocessing.transforms import (
+from sentinelinspect.data.validate_dataset import validate
+from sentinelinspect.preprocessing.transforms import (
     build_train_transforms,
     build_eval_transforms,
 )

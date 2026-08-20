@@ -3,7 +3,7 @@ from __future__ import annotations
 import timm
 import torch.nn as nn
 
-from src.models.base import CrackClassifier
+from sentinelinspect.models.base import CrackClassifier
 
 
 class ResNet50Module(CrackClassifier):

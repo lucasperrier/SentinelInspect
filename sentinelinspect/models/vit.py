@@ -4,7 +4,7 @@ import timm
 import torch
 import torch.nn as nn
 
-from src.models.base import CrackClassifier
+from sentinelinspect.models.base import CrackClassifier
 
 
 class VisionTransformerModule(CrackClassifier):

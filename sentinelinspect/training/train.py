@@ -13,9 +13,9 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
 
-from src.config.load import to_runtime_config
-from src.data.datamodule import CrackDataModule
-from src.models.factory import build_model
+from sentinelinspect.config.load import to_runtime_config
+from sentinelinspect.data.datamodule import CrackDataModule
+from sentinelinspect.models.factory import build_model
 
 
 def flatten_dict(cfg: Dict[str, Any], parent_key: str = "", sep: str = ".") -> Dict[str, Any]:

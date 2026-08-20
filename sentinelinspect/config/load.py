@@ -1,6 +1,6 @@
 from __future__ import annotations
 from omegaconf import DictConfig, OmegaConf
-from src.config.schema import RuntimeConfig
+from sentinelinspect.config.schema import RuntimeConfig
 
 
 def to_runtime_config(cfg: DictConfig) -> RuntimeConfig:

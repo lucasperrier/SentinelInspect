@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from src.preprocessing.transforms import (
+from sentinelinspect.preprocessing.transforms import (
     DEFAULTS,
     build_eval_transforms,
     build_inference_transforms,
@@ -85,7 +85,7 @@ def test_hydra_config_reaches_the_transform():
     """
     from hydra import compose, initialize_config_dir
 
-    from src.config.load import to_runtime_config
+    from sentinelinspect.config.load import to_runtime_config
 
     with initialize_config_dir(config_dir=str(CONFIG_DIR), version_base=None):
         runtime = to_runtime_config(compose(config_name="train"))

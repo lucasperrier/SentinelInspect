@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from src.data.splitters import (
+from sentinelinspect.data.splitters import (
     build_splits_from_manifest,
     split_balance,
     validate_split_ratios,

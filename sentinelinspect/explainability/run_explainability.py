@@ -7,17 +7,17 @@ import numpy as np
 import torch
 import yaml
 
-from src.data.datamodule import CrackDataModule
-from src.models.factory import build_model, model_class_for
+from sentinelinspect.data.datamodule import CrackDataModule
+from sentinelinspect.models.factory import build_model, model_class_for
 
-from src.explainability.grad_cam import GradCAM, upsample_cam_to_image
-from src.explainability.shap_utils import (
+from sentinelinspect.explainability.grad_cam import GradCAM, upsample_cam_to_image
+from sentinelinspect.explainability.shap_utils import (
     make_predict_fn_from_torch,
     shap_explain_resnet_superpixels_kernel,
     shap_explain_superpixels,
     shap_explain_vit_patches_kernel,
 )
-from src.explainability.utils import (
+from sentinelinspect.explainability.utils import (
     denormalize_imagenet,
     to_uint8_hwc,
     colorize_heatmap,

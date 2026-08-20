@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 from PIL import Image
 
-from src.data.validate_dataset import validate
+from sentinelinspect.data.validate_dataset import validate
 
 
 def _make_image(path: Path, size=(8, 8), color=(255, 255, 255)) -> None:
