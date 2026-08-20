@@ -19,6 +19,7 @@ from pytorch_lightning import seed_everything
 from torch.utils.data import DataLoader, Dataset
 
 from sentinelinspect.config.load import to_runtime_config
+from sentinelinspect.config.paths import config_dir
 from sentinelinspect.data.datamodule import CrackDataModule
 from sentinelinspect.evaluation.metrics import (
     compute_metrics,
@@ -91,7 +92,7 @@ def score_split(
     )
 
 
-@hydra.main(version_base=None, config_path="../../configs", config_name="eval")
+@hydra.main(version_base=None, config_path=config_dir(), config_name="eval")
 def main(cfg: DictConfig) -> None:
     runtime = to_runtime_config(cfg)
 

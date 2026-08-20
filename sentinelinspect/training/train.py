@@ -12,6 +12,7 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from sentinelinspect.config.load import to_runtime_config
+from sentinelinspect.config.paths import config_dir
 from sentinelinspect.data.datamodule import CrackDataModule
 from sentinelinspect.models.factory import build_model
 
@@ -39,7 +40,7 @@ def flatten_dict(cfg: dict[str, Any], parent_key: str = "", sep: str = ".") -> d
     return dict(items)
 
 
-@hydra.main(version_base=None, config_path="../../configs", config_name="train")
+@hydra.main(version_base=None, config_path=config_dir(), config_name="train")
 def main(cfg: DictConfig) -> None:
     runtime = to_runtime_config(cfg)
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)

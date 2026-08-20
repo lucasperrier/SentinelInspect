@@ -21,11 +21,12 @@ import hydra
 from omegaconf import DictConfig
 
 from sentinelinspect.config.load import to_runtime_config
+from sentinelinspect.config.paths import config_dir
 from sentinelinspect.inference.model_loader import CheckpointNotFoundError
 from sentinelinspect.inference.predictor import InvalidImageError, Predictor
 
 
-@hydra.main(version_base=None, config_path="../../configs", config_name="inference")
+@hydra.main(version_base=None, config_path=config_dir(), config_name="inference")
 def main(cfg: DictConfig) -> None:
     runtime = to_runtime_config(cfg)
 
