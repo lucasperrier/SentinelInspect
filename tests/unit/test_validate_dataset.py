@@ -92,10 +92,10 @@ def test_validate_detects_corrupt_image(tmp_path: Path):
 
 
 def test_skip_file_checks_does_not_touch_the_filesystem(tmp_path: Path):
-    """The filesystem walk opens every image and dominates runtime.
+    """Skipping the walk must not silently invent a pass.
 
-    Skipping it must not silently invent a pass: the tabular checks still run,
-    but nothing is reported about files that were never looked at.
+    The tabular checks still run; nothing is reported about files that were
+    never looked at. Tests rely on this to avoid writing real images to disk.
     """
     manifest_path = tmp_path / "manifest.csv"
     _write_csv(manifest_path, [{"relative_path": "does/not/exist.jpg", "label": "crack", "sha256": "h1"}])

@@ -198,8 +198,10 @@ def validate(
 ) -> ValidationReport:
     """Validate a manifest and its split files.
 
-    Set `check_files=False` to skip the filesystem walk, which opens every
-    image and dominates runtime on large datasets.
+    Set `check_files=False` to skip the filesystem walk. The walk opens every
+    image to verify its header, which costs about 2s for 40k files -- cheap
+    enough to leave on at training start. The flag exists so unit tests can
+    exercise the tabular checks without materialising image files on disk.
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -296,7 +298,7 @@ def main() -> int:
     parser.add_argument(
         "--skip-file-checks",
         action="store_true",
-        help="Skip opening every image. Much faster; only checks the tabular artifacts.",
+        help="Skip opening every image; only check the tabular artifacts.",
     )
     args = parser.parse_args()
 
