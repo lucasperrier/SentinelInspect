@@ -45,3 +45,6 @@ mlruns/
 build/
 dist/
 *.whl
+
+# private preparation material, deliberately not published
+notes/

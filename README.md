@@ -408,7 +408,7 @@ orchestration, and further hyperparameter search.
 ```
 configs/              Hydra configuration groups: data, model, trainer, mlflow, review, service
 docker/               Dockerfile.api
-docs/                 architecture.md · CODE_TOUR.md · INTERVIEW_NOTES.md · roadmap.md
+docs/                 architecture.md · CODE_TOUR.md · roadmap.md
 sentinelinspect/
   config/             Typed configuration schema and loader (Pydantic over Hydra)
   data/               Manifest construction, splitting, validation, Lightning datamodule
@@ -431,7 +431,6 @@ tests/                Unit and integration tests
 | [`docs/architecture.md`](docs/architecture.md) | System boundaries and the trade-off accepted at each |
 | [`docs/CODE_TOUR.md`](docs/CODE_TOUR.md) | File-by-file walkthrough in execution order |
 | [`docs/roadmap.md`](docs/roadmap.md) | Delivered scope, excluded scope, and defects found during development |
-| [`docs/INTERVIEW_NOTES.md`](docs/INTERVIEW_NOTES.md) | Design rationale and known limitations in discussion form |
 
 ---
 
