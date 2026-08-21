@@ -95,11 +95,16 @@ jobs:
 
           cat uvicorn.log
 
-      - name: Publish the smoke checkpoint for the container job
+      # Both fixtures are built here because this job has the package installed.
+      # The container job has neither Pillow nor the package, so it cannot make
+      # its own test image -- it downloads these instead.
+      - name: Publish the smoke fixtures for the container job
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-checkpoint
-          path: ci-smoke.ckpt
+          name: smoke-fixtures
+          path: |
+            ci-smoke.ckpt
+            ci-smoke.jpg
           retention-days: 1
 
   container:
@@ -113,7 +118,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: smoke-checkpoint
+          name: smoke-fixtures
           path: models
 
       - uses: docker/setup-buildx-action@v3
@@ -148,13 +153,8 @@ jobs:
 
       - name: Predict through the container
         run: |
-          python -c "
-          from PIL import Image
-          import numpy as np
-          Image.fromarray(np.zeros((64,64,3), dtype=np.uint8)).save('smoke.jpg')
-          "
-          curl -fsS -F "file=@smoke.jpg;type=image/jpeg" http://localhost:8000/predict \
-            | tee /dev/stderr | grep -q '"predicted_label"'
+          curl -fsS -F "file=@models/ci-smoke.jpg;type=image/jpeg" \
+            http://localhost:8000/predict | tee /dev/stderr | grep -q '"predicted_label"'
 
       - name: Container logs
         if: always()
